@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-elev: var(--c-elev);
+  --color-hover: var(--c-hover);
+  --color-line: var(--c-line);
+  --color-line2: var(--c-line2);
+  --color-ink: var(--c-text);
+  --color-dim: var(--c-dim);
+  --color-faint: var(--c-faint);
+  --color-accent: var(--c-accent);
+  --color-up: var(--c-up);
+  --color-down: var(--c-down);
+  --color-warn: var(--c-warn);
+  --color-info: var(--c-info);
+  --color-violet: var(--c-violet);
+
+  --radius-card: 6px;
+  --radius-pill: 999px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+}
+
+/* Bảng màu terminal: tối là mặc định, sáng đổi bằng data-theme trên <html>.
+   Canvas của chart đọc lại chính các biến này nên chỉ có một nguồn màu. */
+:root,
+[data-theme="dark"] {
+  --c-bg: #131722;
+  --c-panel: #1e222d;
+  --c-elev: #262b3e;
+  --c-hover: #2a2e39;
+  --c-line: #2a2e39;
+  --c-line2: #363a45;
+  --c-text: #d1d4dc;
+  --c-dim: #787b86;
+  --c-faint: #5d606b;
+  --c-accent: #2962ff;
+  --c-up: #26a69a;
+  --c-down: #ef5350;
+  --c-warn: #ff9800;
+  --c-info: #2196f3;
+  --c-violet: #9c27b0;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --c-bg: #ffffff;
+  --c-panel: #f8f9fd;
+  --c-elev: #ffffff;
+  --c-hover: #f0f3fa;
+  --c-line: #e0e3eb;
+  --c-line2: #c8ccd8;
+  --c-text: #131722;
+  --c-dim: #787b86;
+  --c-faint: #9598a1;
+  --c-accent: #2962ff;
+  --c-up: #089981;
+  --c-down: #f23645;
+  --c-warn: #f57c00;
+  --c-info: #1976d2;
+  --c-violet: #7b1fa2;
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--c-accent) 40%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: -2px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thanh cuộn theo màu của terminal, không dùng mặc định của trình duyệt. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line2) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--c-panel);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--c-line2);
+  border: 2px solid var(--c-panel);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-dim);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--c-panel);
+}
+
+/* Dải tab chỉ cao 36px nên dùng thanh cuộn mảnh, vẫn cùng màu terminal. */
+.ml-thin-scroll {
+  scrollbar-width: thin;
+}
+
+.ml-thin-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.ml-thin-scroll::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 2px;
+}
+
+@keyframes ml-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ml-toast {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes ml-flash-up {
+  from {
+    background-color: color-mix(in srgb, var(--c-up) 26%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes ml-flash-down {
+  from {
+    background-color: color-mix(in srgb, var(--c-down) 26%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes ml-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.ml-pop {
+  animation: ml-pop 90ms ease-out;
+}
+
+.ml-toast {
+  animation: ml-toast 140ms ease-out;
+}
+
+.flash-up {
+  animation: ml-flash-up 500ms ease-out;
+}
+
+.flash-down {
+  animation: ml-flash-down 500ms ease-out;
+}
+
+.ml-pulse {
+  animation: ml-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ml-pop,
+  .ml-toast,
+  .flash-up,
+  .flash-down,
+  .ml-pulse {
+    animation: none;
+  }
+}

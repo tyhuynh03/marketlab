@@ -1,0 +1,16 @@
+# Chay sau khi tao venv: pip install -r requirements.txt
+# Ban dau de mo, slice 1 xong thi dong bang pip freeze (xem ghi chu README).
+ccxt
+asyncpg
+fastapi
+uvicorn[standard]
+websockets
+pandas
+numpy
+pydantic-settings
+APScheduler
+
+# test
+pytest
+pytest-asyncio
+httpx

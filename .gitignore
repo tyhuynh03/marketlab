@@ -1,0 +1,18 @@
+# Dependencies / build output
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Bí mật — chỉ commit .env.example
+.env
+.env.local
+
+# Rác máy cục bộ
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

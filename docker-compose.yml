@@ -1,0 +1,57 @@
+# Stack đủ để mang về nhà: db + api + worker ingest + web.
+# Port publish đổi được qua .env vì máy ở nhà có thể đã chiếm 5433/8010/5173.
+x-backend: &backend
+  build: ./backend
+  image: marketlab-web-backend:local
+  restart: unless-stopped
+  environment:
+    # Trong mạng compose thì db nói chuyện ở cổng 5432, không phải 5433 publish ra host.
+    DATABASE_URL: postgresql://${POSTGRES_USER:-marketlab}:${POSTGRES_PASSWORD:-marketlab}@db:5432/${POSTGRES_DB:-marketlab}
+    VENUE: ${VENUE:-binance}
+    BASE_TIMEFRAME: ${BASE_TIMEFRAME:-1h}
+    HISTORY_DAYS: ${HISTORY_DAYS:-120}
+    INGEST_INTERVAL_SECONDS: ${INGEST_INTERVAL_SECONDS:-300}
+    LIVE_ENABLED: ${LIVE_ENABLED:-true}
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: timescale/timescaledb:2.31.0-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-marketlab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marketlab}
+      POSTGRES_DB: ${POSTGRES_DB:-marketlab}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marketlab} -d ${POSTGRES_DB:-marketlab}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:${API_PORT:-8010}:8010"
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "marketlab_web.ingest"]
+
+  web:
+    build: ./web
+    image: marketlab-web-web:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-5173}:80"
+    depends_on:
+      - api
+
+volumes:
+  dbdata:
