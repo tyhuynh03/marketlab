@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -145,14 +146,21 @@ class LiveHub:
 
     async def _pump(self, socket: Any, lookup: dict[str, tuple[str, str]],
                     symbols: set[str]) -> None:
+        checked = time.monotonic()
         while not self._stop.is_set():
             try:
                 raw = await asyncio.wait_for(socket.recv(), timeout=WATCHLIST_POLL_SECONDS)
             except asyncio.TimeoutError:
-                # Không có bản tin nào vẫn phải ngó watchlist: thêm/bớt symbol phải đổi stream.
                 if set(await self._load_symbols()) != symbols:
                     return
+                checked = time.monotonic()
                 continue
+            # Stream đông bản tin thì nhánh timeout không bao giờ chạy,
+            # nên phải ngó watchlist theo deadline ngay cả khi đang nhận đều.
+            if time.monotonic() - checked >= WATCHLIST_POLL_SECONDS:
+                checked = time.monotonic()
+                if set(await self._load_symbols()) != symbols:
+                    return
             message = json.loads(raw)
             target = lookup.get(message.get("stream", ""))
             if target is None:

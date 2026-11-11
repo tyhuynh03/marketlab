@@ -17,6 +17,8 @@ import BottomPanel, { type LogEntry } from "./components/BottomPanel";
 import ChartPane, { type ChartHandle } from "./components/ChartPane";
 import { IndicatorsDialog, SettingsDialog, ShortcutsDialog } from "./components/Dialogs";
 import DrawingRail from "./components/DrawingRail";
+import Overview from "./components/Overview";
+import Portfolio from "./components/Portfolio";
 import RightPanel from "./components/RightPanel";
 import StatusBar from "./components/StatusBar";
 import SymbolSearch from "./components/SymbolSearch";
@@ -58,6 +60,7 @@ export default function App() {
   const [limit, setLimit] = useState(loadLimit);
   const [fullscreen, setFullscreen] = useState(false);
   const [rightDrawer, setRightDrawer] = useState(false);
+  const [view, setView] = useState<"overview" | "terminal" | "portfolio">("overview");
 
   const [tool, setTool] = useState<ToolId>("cursor");
   const [drawColor, setDrawColor] = useState("#2962ff");
@@ -335,6 +338,12 @@ export default function App() {
   const onTimeframe = useCallback((tf: Timeframe) => setTimeframe(tf), []);
   const onChartType = useCallback((t: ChartType) => update("chartType", t), [update]);
   const onSelectSymbol = useCallback((next: string) => setSymbol(next), []);
+  const onOpenSymbol = useCallback((next: string, tf?: Timeframe) => {
+    setSymbol(next);
+    if (tf) setTimeframe(tf);
+    setView("terminal");
+  }, []);
+  const onView = useCallback((v: "overview" | "terminal" | "portfolio") => setView(v), []);
   const toggleRight = useCallback(() => {
     if (wide) update("rightPanel", !settings.rightPanel);
     else setRightDrawer((v) => !v);
@@ -360,7 +369,13 @@ export default function App() {
         }
         return;
       }
-      if (e.key === "/") {
+      if (key === "o") {
+        setView("overview");
+      } else if (key === "c") {
+        setView("terminal");
+      } else if (key === "p") {
+        setView("portfolio");
+      } else if (e.key === "/") {
         e.preventDefault();
         setSearchOpen(true);
       } else if (e.key === "?") {
@@ -426,6 +441,8 @@ export default function App() {
         settings={settings}
         ingesting={ingest.isPending}
         fullscreen={fullscreen}
+        view={view}
+        onView={onView}
         onTimeframe={onTimeframe}
         onChartType={onChartType}
         onOpenSearch={() => setSearchOpen(true)}
@@ -441,6 +458,35 @@ export default function App() {
       />
 
       <div className="relative flex min-h-0 flex-1">
+        {view === "overview" ? (
+          <Overview
+            entries={entries}
+            livePrices={livePrices}
+            liveState={live.state}
+            health={health.data}
+            palette={palette}
+            ingesting={ingest.isPending}
+            onOpenSymbol={onOpenSymbol}
+            onRemove={onRemove}
+            onOpenSearch={() => setSearchOpen(true)}
+            onIngest={runIngest}
+            onToggleLive={() => update("live", !settings.live)}
+            liveEnabled={settings.live}
+          />
+        ) : view === "portfolio" ? (
+          <Portfolio
+            entries={entries}
+            livePrices={livePrices}
+            liveState={live.state}
+            palette={palette}
+            onToast={pushToast}
+            onLog={pushLog}
+            onToggleLive={() => update("live", !settings.live)}
+            liveEnabled={settings.live}
+            onOpenSymbol={onOpenSymbol}
+          />
+        ) : (
+          <>
         <DrawingRail
           tool={tool}
           locked={locked}
@@ -510,6 +556,8 @@ export default function App() {
           <>
             <div className="absolute inset-0 z-40 bg-black/50" onClick={() => setRightDrawer(false)} aria-hidden="true" />
             <div className="absolute inset-y-0 right-0 z-50 flex max-w-full">{rightPanel}</div>
+          </>
+        )}
           </>
         )}
       </div>

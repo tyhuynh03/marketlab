@@ -81,15 +81,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button {
-  font: inherit;
-  color: inherit;
-}
+@layer base {
+  button {
+    font: inherit;
+    color: inherit;
+  }
 
-input,
-select {
-  font: inherit;
-  color: inherit;
+  input,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 ::selection {

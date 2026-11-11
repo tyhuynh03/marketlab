@@ -157,3 +157,162 @@ export function fmtTime(iso: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return "—";
   return date.toISOString().slice(0, 16).replace("T", " ");
 }
+
+/* ---------- Paper trading / Portfolio ---------- */
+
+/** Khớp đúng backend portfolio.py: phí taker 0.1%, trượt giá 0.05% chiều bất lợi. */
+export const PAPER_FEE_RATE = 0.001;
+export const PAPER_SLIPPAGE = 0.0005;
+export const PAPER_CAPITAL = 100000;
+
+export type Benchmark = "btc" | "8020";
+
+export type Position = {
+  symbol: string;
+  label: string | null;
+  qty: number;
+  avg: number;
+  mark: number;
+  mark_source: "live" | "closed";
+  value: number;
+  unrealized: number;
+  unrealized_pct: number;
+  weight: number;
+  breakeven: number;
+  risk_contrib: number | null;
+};
+
+export type TargetDrift = { symbol: string; target: number; current: number; drift: number };
+
+export type PortfolioSnapshot = {
+  inception: string | null;
+  capital: number;
+  cash: number;
+  holdings: number;
+  nav: number;
+  nav_pct: number;
+  unrealized: number;
+  unrealized_pct: number;
+  realized_net: number;
+  fees: number;
+  positions: Position[];
+  targets: TargetDrift[];
+  reconciliation: number;
+};
+
+export type EquityPoint = { ts: string; nav: number; bench: number; dd: number; dd_bench: number };
+
+export type EquityMetrics = {
+  sharpe?: number;
+  sortino?: number;
+  max_drawdown?: number;
+  volatility?: number;
+  total_return?: number;
+  bench_return?: number;
+  beta?: number | null;
+  alpha?: number | null;
+};
+
+export type EquityResponse = {
+  inception: string | null;
+  benchmark?: string;
+  points: EquityPoint[];
+  metrics: EquityMetrics;
+};
+
+export type FillRow = {
+  ts: string;
+  kind: "buy" | "sell";
+  symbol: string;
+  qty: number;
+  price: number;
+  fee: number;
+  realized: number | null;
+  source: string;
+  id: string;
+  note: string | null;
+};
+
+export type CashRow = {
+  ts: string;
+  kind: string;
+  symbol: string | null;
+  source: string;
+  note: string | null;
+  amount: number;
+  balance: number;
+};
+
+export type RebalanceItem = {
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  est_price: number;
+  est_fee: number;
+  current: number;
+  target: number;
+  drift: number;
+};
+
+export type OrderResult = {
+  duplicate?: boolean;
+  id?: string;
+  mark_source?: string;
+  ts?: string;
+  kind?: string;
+  symbol?: string;
+  qty?: number;
+  price?: number;
+  fee?: number;
+  realized?: number | null;
+  source?: string;
+};
+
+async function errorDetail(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown };
+    if (parsed && typeof parsed.detail === "string") return parsed.detail;
+  } catch {
+    /* không phải JSON */
+  }
+  return `${res.status} — ${truncate(text)}`;
+}
+
+async function send<T>(path: string, method: "POST" | "PUT", body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res));
+  return (await res.json()) as T;
+}
+
+export const fetchPortfolio = (signal?: AbortSignal) => get<PortfolioSnapshot>("/api/portfolio", signal);
+
+export const fetchEquity = (benchmark: Benchmark, signal?: AbortSignal) =>
+  get<EquityResponse>(`/api/portfolio/equity?benchmark=${benchmark}`, signal);
+
+export const fetchFills = (limit = 200, signal?: AbortSignal) =>
+  get<FillRow[]>(`/api/portfolio/ledger?tab=fills&limit=${limit}`, signal);
+
+export const fetchCashLedger = (limit = 200, signal?: AbortSignal) =>
+  get<CashRow[]>(`/api/portfolio/ledger?tab=cash&limit=${limit}`, signal);
+
+export const fetchRebalancePlan = () =>
+  send<{ plan: RebalanceItem[] }>("/api/portfolio/rebalance", "POST", { execute: false });
+
+export const executeRebalance = (idemKey?: string) =>
+  send<{ executed: FillRow[] }>("/api/portfolio/rebalance", "POST", { execute: true, idem_key: idemKey });
+
+export const placeOrder = (body: { symbol: string; side: "buy" | "sell"; qty: number; idem_key?: string }) =>
+  send<OrderResult>("/api/portfolio/order", "POST", body);
+
+export const setTargets = (weights: Record<string, number>) =>
+  send<{ weights: Record<string, number> }>("/api/portfolio/targets", "PUT", { weights });
+
+export const resetPortfolio = () => send<{ reset: string }>("/api/portfolio/reset", "POST");
+
+export const seedPortfolio = (days = 60) =>
+  send<{ seeded_orders: number }>("/api/portfolio/seed", "POST", { days });
