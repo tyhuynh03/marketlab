@@ -22,7 +22,7 @@ thật và chart tương tác. Market-lab vẫn là bản không dependency.
 ## Chạy bằng Docker (đổi máy / mang về nhà)
 
 ```bash
-git clone <repo-cua-ban> marketlab-web && cd marketlab-web
+git clone https://github.com/tyhuynh03/marketlab.git marketlab-web && cd marketlab-web
 cp .env.example .env              # đổi POSTGRES_PASSWORD, và port nếu máy đã chiếm
 docker compose up -d --build      # db + api + worker ingest + web
 ```
