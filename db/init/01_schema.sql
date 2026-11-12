@@ -77,5 +77,15 @@ SELECT add_continuous_aggregate_policy('candle_1d',
 
 INSERT INTO watchlist (venue, symbol, timeframe, label) VALUES
     ('binance', 'BTC/USDT', '1h', 'Bitcoin'),
-    ('binance', 'ETH/USDT', '1h', 'Ethereum')
+    ('binance', 'ETH/USDT', '1h', 'Ethereum'),
+    ('binance', 'SOL/USDT', '1h', 'Solana'),
+    ('binance', 'XRP/USDT', '1h', 'XRP'),
+    ('binance', 'DOGE/USDT', '1h', 'Dogecoin'),
+    ('binance', 'ADA/USDT', '1h', 'Cardano'),
+    ('binance', 'LINK/USDT', '1h', 'Chainlink'),
+    ('binance', 'AVAX/USDT', '1h', 'Avalanche'),
+    ('binance', 'DOT/USDT', '1h', 'Polkadot'),
+    ('binance', 'LTC/USDT', '1h', 'Litecoin'),
+    ('binance', 'BCH/USDT', '1h', 'Bitcoin Cash'),
+    ('binance', 'UNI/USDT', '1h', 'Uniswap')
 ON CONFLICT DO NOTHING;
