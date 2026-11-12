@@ -55,3 +55,17 @@ async def test_remove_symbol_rejects_bad_symbol_before_db(settings_only):
     with pytest.raises(HTTPException) as exc:
         await api.remove_symbol(symbol="../etc/passwd")
     assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_add_symbol_yahoo_rejects_crypto_pair_before_network(settings_only):
+    with pytest.raises(HTTPException) as exc:
+        await api.add_symbol(api.WatchlistIn(symbol="BTC/USDT", venue="yahoo"))
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_remove_symbol_yahoo_rejects_crypto_pair_before_db(settings_only):
+    with pytest.raises(HTTPException) as exc:
+        await api.remove_symbol(symbol="BTC/USDT", venue="yahoo")
+    assert exc.value.status_code == 422

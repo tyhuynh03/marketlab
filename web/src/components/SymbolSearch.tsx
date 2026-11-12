@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fmtPct, fmtPrice, type WatchEntry } from "../api";
+import { fmtPct, fmtPrice, venueLabel, type WatchEntry } from "../api";
 import { CATALOG } from "../catalog";
 import { Empty, Icon, Modal, ToolButton } from "./ui";
 
-type Row = { symbol: string; name: string; watched: boolean; entry?: WatchEntry };
+type Row = { symbol: string; name: string; venue: string; watched: boolean; entry?: WatchEntry };
 
 export default function SymbolSearch({
   open,
@@ -23,7 +23,7 @@ export default function SymbolSearch({
   error: string | null;
   onClose: () => void;
   onSelect: (symbol: string) => void;
-  onAdd: (symbol: string, name: string) => void;
+  onAdd: (symbol: string, name: string, venue: string) => void;
   onRemove: (symbol: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -43,11 +43,11 @@ export default function SymbolSearch({
       !q || symbol.toLowerCase().replace("/", "").includes(q.replace("/", "")) || name.toLowerCase().includes(q);
     const watched: Row[] = entries
       .filter((e) => match(e.symbol, e.label ?? ""))
-      .map((e) => ({ symbol: e.symbol, name: e.label ?? e.symbol, watched: true, entry: e }));
+      .map((e) => ({ symbol: e.symbol, name: e.label ?? e.symbol, venue: e.venue, watched: true, entry: e }));
     const known = new Set(entries.map((e) => e.symbol));
     const rest: Row[] = CATALOG
       .filter((c) => !known.has(c.symbol) && match(c.symbol, c.name))
-      .map((c) => ({ symbol: c.symbol, name: c.name, watched: false }));
+      .map((c) => ({ symbol: c.symbol, name: c.name, venue: c.venue ?? "binance", watched: false }));
     return [...watched, ...rest];
   }, [query, entries]);
 
@@ -66,7 +66,7 @@ export default function SymbolSearch({
       onSelect(row.symbol);
       onClose();
     } else {
-      onAdd(row.symbol, row.name);
+      onAdd(row.symbol, row.name, row.venue);
     }
   };
 
@@ -75,7 +75,7 @@ export default function SymbolSearch({
       open={open}
       onClose={onClose}
       title="Tìm symbol"
-      subtitle="Gõ tên hoặc mã. Symbol mới sẽ được nạp lịch sử từ Binance trước khi vào danh sách."
+      subtitle="Gõ tên hoặc mã. Symbol mới được nạp lịch sử trước khi vào danh sách — crypto từ Binance, cổ phiếu Mỹ từ Yahoo."
       width={620}
     >
       <div
@@ -129,7 +129,14 @@ export default function SymbolSearch({
                 onClick={() => commit(row)}
                 className="flex min-w-0 flex-1 items-center gap-3 text-left"
               >
-                <span className="w-[104px] shrink-0 truncate font-semibold">{row.symbol}</span>
+                <span className="flex w-[104px] shrink-0 items-center gap-1 overflow-hidden font-semibold">
+                  <span className="truncate">{row.symbol}</span>
+                  {row.venue !== "binance" && (
+                    <span className="shrink-0 rounded-card border border-line px-1 text-[9px] font-normal text-faint">
+                      {venueLabel(row.venue)}
+                    </span>
+                  )}
+                </span>
                 <span className="min-w-0 flex-1 truncate text-dim">{row.name}</span>
                 {row.entry && (
                   <>
@@ -160,7 +167,7 @@ export default function SymbolSearch({
         </div>
 
         <p className="border-t border-line px-4 py-2 text-[11px] text-faint">
-          ↑ ↓ để chọn · Enter để mở hoặc thêm · Esc để đóng. Danh sách gợi ý đã đối chiếu với các cặp spot đang giao dịch trên Binance.
+          ↑ ↓ để chọn · Enter để mở hoặc thêm · Esc để đóng. Gợi ý crypto đã đối chiếu với cặp spot đang giao dịch trên Binance; cổ phiếu Mỹ chỉ xem, không vào sổ paper.
         </p>
       </div>
     </Modal>

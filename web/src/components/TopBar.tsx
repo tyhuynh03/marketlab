@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { TIMEFRAMES, type Timeframe } from "../api";
+import { TIMEFRAMES, venueLabel, type Timeframe } from "../api";
 import { CHART_TYPES, type ChartType, type Settings } from "../store";
 import { Divider, Icon, MenuItem, Popover, ToolButton } from "./ui";
 
@@ -19,6 +19,8 @@ export default function TopBar({
   settings,
   ingesting,
   fullscreen,
+  view,
+  onView,
   onTimeframe,
   onChartType,
   onOpenSearch,
@@ -38,6 +40,8 @@ export default function TopBar({
   settings: Settings;
   ingesting: boolean;
   fullscreen: boolean;
+  view: "overview" | "terminal" | "portfolio";
+  onView: (v: "overview" | "terminal" | "portfolio") => void;
   onTimeframe: (tf: Timeframe) => void;
   onChartType: (t: ChartType) => void;
   onOpenSearch: () => void;
@@ -64,6 +68,49 @@ export default function TopBar({
 
       <Divider vertical />
 
+      <div className="flex items-center rounded-card border border-line" role="group" aria-label="Màn hình">
+        <button
+          type="button"
+          onClick={() => onView("overview")}
+          aria-pressed={view === "overview"}
+          className={
+            "flex h-7 items-center gap-1.5 rounded-card px-2 text-[12px] transition-colors " +
+            (view === "overview" ? "bg-hover font-semibold text-accent" : "text-dim hover:bg-hover hover:text-ink")
+          }
+        >
+          <Icon name="layers" size={14} />
+          Tổng quan
+        </button>
+        <button
+          type="button"
+          onClick={() => onView("terminal")}
+          aria-pressed={view === "terminal"}
+          className={
+            "flex h-7 items-center gap-1.5 rounded-card px-2 text-[12px] transition-colors " +
+            (view === "terminal" ? "bg-hover font-semibold text-accent" : "text-dim hover:bg-hover hover:text-ink")
+          }
+        >
+          <Icon name="candles" size={14} />
+          Terminal
+        </button>
+        <button
+          type="button"
+          onClick={() => onView("portfolio")}
+          aria-pressed={view === "portfolio"}
+          className={
+            "flex h-7 items-center gap-1.5 rounded-card px-2 text-[12px] transition-colors " +
+            (view === "portfolio" ? "bg-hover font-semibold text-accent" : "text-dim hover:bg-hover hover:text-ink")
+          }
+        >
+          <Icon name="wallet" size={14} />
+          Tài sản
+        </button>
+      </div>
+
+      <Divider vertical />
+
+      {view === "terminal" && (
+      <>
       <button
         type="button"
         onClick={onOpenSearch}
@@ -72,7 +119,7 @@ export default function TopBar({
       >
         <Icon name="search" size={15} className="text-dim" />
         {symbol}
-        <span className="rounded-card border border-line px-1 text-[10px] font-normal uppercase text-faint">{venue}</span>
+        <span className="rounded-card border border-line px-1 text-[10px] font-normal uppercase text-faint">{venueLabel(venue)}</span>
       </button>
 
       <Divider vertical />
@@ -137,6 +184,8 @@ export default function TopBar({
       </button>
 
       <ToolButton icon="camera" label="Chụp ảnh chart (PNG)" onClick={onSnapshot} />
+      </>
+      )}
       <ToolButton icon="gear" label="Tuỳ chọn chart (S)" onClick={onOpenSettings} />
       <ToolButton icon="keyboard" label="Phím tắt (?)" onClick={onOpenShortcuts} />
 
@@ -146,6 +195,8 @@ export default function TopBar({
           label={settings.theme === "dark" ? "Chuyển nền sáng" : "Chuyển nền tối"}
           onClick={onToggleTheme}
         />
+        {view === "terminal" && (
+        <>
         <ToolButton
           icon="list"
           label="Bảng theo dõi bên phải"
@@ -164,6 +215,8 @@ export default function TopBar({
           active={fullscreen}
           onClick={onToggleFullscreen}
         />
+        </>
+        )}
         <Divider vertical />
         <button
           type="button"

@@ -28,7 +28,7 @@ import {
   type UTCTimestamp,
   type WhitespaceData,
 } from "lightweight-charts";
-import { autoDigits, fmtCompact, fmtPrice, type Candle } from "../api";
+import { autoDigits, fmtCompact, fmtPrice, venueLabel, type Candle } from "../api";
 import {
   hitHandle,
   hitTest,
@@ -576,7 +576,7 @@ const ChartPane = forwardRef<ChartHandle, ChartPaneProps>(function ChartPane(pro
       vertAlign: "center" as const,
       lines: [
         { text: symbol, color: withAlpha(palette.text, 0.07), fontSize: 46, fontStyle: "bold" },
-        { text: `${venue.toUpperCase()} · ${timeframe}`, color: withAlpha(palette.text, 0.06), fontSize: 17 },
+        { text: `${venueLabel(venue).toUpperCase()} · ${timeframe}`, color: withAlpha(palette.text, 0.06), fontSize: 17 },
       ],
     };
     if (watermarkRef.current) watermarkRef.current.applyOptions(options);
@@ -851,7 +851,7 @@ const ChartPane = forwardRef<ChartHandle, ChartPaneProps>(function ChartPane(pro
           <span className="text-dim">·</span>
           <span className="text-dim">{timeframe}</span>
           <span className="text-dim">·</span>
-          <span className="uppercase text-dim">{venue}</span>
+          <span className="uppercase text-dim">{venueLabel(venue)}</span>
           <span
             className={
               "flex items-center gap-1 rounded-card border px-1 text-[10px] " +

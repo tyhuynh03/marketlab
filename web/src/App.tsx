@@ -17,6 +17,8 @@ import BottomPanel, { type LogEntry } from "./components/BottomPanel";
 import ChartPane, { type ChartHandle } from "./components/ChartPane";
 import { IndicatorsDialog, SettingsDialog, ShortcutsDialog } from "./components/Dialogs";
 import DrawingRail from "./components/DrawingRail";
+import Overview from "./components/Overview";
+import Portfolio from "./components/Portfolio";
 import RightPanel from "./components/RightPanel";
 import StatusBar from "./components/StatusBar";
 import SymbolSearch from "./components/SymbolSearch";
@@ -58,6 +60,7 @@ export default function App() {
   const [limit, setLimit] = useState(loadLimit);
   const [fullscreen, setFullscreen] = useState(false);
   const [rightDrawer, setRightDrawer] = useState(false);
+  const [view, setView] = useState<"overview" | "terminal" | "portfolio">("overview");
 
   const [tool, setTool] = useState<ToolId>("cursor");
   const [drawColor, setDrawColor] = useState("#2962ff");
@@ -124,13 +127,19 @@ export default function App() {
     queryFn: ({ signal }) => fetchWatchlist(signal),
     staleTime: 15_000,
   });
+  const entries = watchlist.data ?? [];
+  const selectedEntry = entries.find((e) => e.symbol === symbol);
+  const venue = selectedEntry?.venue ?? "binance";
+  // sổ paper chỉ ghi crypto nên vé lệnh không được mời gọi cổ phiếu Mỹ
+  const paperEntries = useMemo(() => entries.filter((e) => e.venue === "binance"), [entries]);
+
   const candles = useQuery({
-    queryKey: ["candles", symbol, timeframe, limit],
-    queryFn: ({ signal }) => fetchCandles(symbol, timeframe, limit, signal),
+    queryKey: ["candles", symbol, timeframe, limit, venue],
+    queryFn: ({ signal }) => fetchCandles(symbol, timeframe, limit, venue, signal),
   });
   const summary = useQuery({
-    queryKey: ["summary", symbol, timeframe, limit],
-    queryFn: ({ signal }) => fetchSummary(symbol, timeframe, limit, signal),
+    queryKey: ["summary", symbol, timeframe, limit, venue],
+    queryFn: ({ signal }) => fetchSummary(symbol, timeframe, limit, venue, signal),
   });
   const health = useQuery({
     queryKey: ["health"],
@@ -139,11 +148,10 @@ export default function App() {
     refetchInterval: 60_000,
   });
 
-  const entries = watchlist.data ?? [];
   const sparkQueries = useQueries({
     queries: entries.map((e) => ({
-      queryKey: ["spark", e.symbol, e.timeframe],
-      queryFn: ({ signal }: { signal: AbortSignal }) => fetchCandles(e.symbol, e.timeframe, 60, signal),
+      queryKey: ["spark", e.symbol, e.timeframe, e.venue],
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchCandles(e.symbol, e.timeframe, 60, e.venue, signal),
       staleTime: 60_000,
     })),
   });
@@ -166,8 +174,6 @@ export default function App() {
 
   const rows = candles.data?.candles ?? [];
   const last = rows.length > 0 ? rows[rows.length - 1] : undefined;
-  const selectedEntry = entries.find((e) => e.symbol === symbol);
-  const venue = selectedEntry?.venue ?? "binance";
 
   /* ---------- realtime: nến đang chạy từ hub backend, kho vẫn chỉ nến đã đóng ---------- */
   const onLiveClosed = useCallback((symbols: string[]) => {
@@ -213,7 +219,7 @@ export default function App() {
       const parts = Object.entries(result).map(([s, n]) => `${s}: ${n}`);
       setLastIngest(`${new Date().toISOString().slice(11, 19)} UTC`);
       pushLog(`Nạp xong — ${parts.join(" · ")}`, "ok");
-      pushToast(`Đã nạp ${parts.length} symbol từ Binance.`, "ok");
+      pushToast(`Đã nạp ${parts.length} symbol.`, "ok");
     },
     onError: (error: Error) => {
       pushLog(`Nạp dữ liệu thất bại: ${error.message}`, "error");
@@ -223,12 +229,13 @@ export default function App() {
 
   const runIngest = useCallback(() => {
     if (ingest.isPending) return;
-    pushLog("Bắt đầu nạp lại toàn bộ watchlist từ Binance");
+    pushLog("Bắt đầu nạp lại toàn bộ watchlist");
     ingest.mutate();
   }, [ingest, pushLog]);
 
   const add = useMutation({
-    mutationFn: ({ symbol: next, label }: { symbol: string; label: string }) => addSymbol(next, label),
+    mutationFn: ({ symbol: next, label, venue: nextVenue }: { symbol: string; label: string; venue: string }) =>
+      addSymbol(next, label, nextVenue),
     onMutate: ({ symbol: next }) => {
       setAdding(next);
       setAddError(null);
@@ -251,15 +258,18 @@ export default function App() {
   });
 
   const remove = useMutation({
-    mutationFn: (target: string) => removeSymbol(target),
+    mutationFn: (target: string) =>
+      removeSymbol(target, entries.find((e) => e.symbol === target)?.venue),
     onSuccess: (data, target) => {
-      const label = entries.find((e) => e.symbol === target)?.label ?? null;
+      const gone = entries.find((e) => e.symbol === target);
+      const label = gone?.label ?? null;
+      const goneVenue = gone?.venue;
       void client.invalidateQueries({ queryKey: ["watchlist"] });
       pushLog(`Bỏ ${data.removed} khỏi danh sách theo dõi`);
       pushToast(`Đã bỏ ${data.removed}. Nến đã nạp vẫn còn trong kho.`, "info", {
         label: "Hoàn tác",
         run: () => {
-          addSymbol(data.removed, label ?? undefined)
+          addSymbol(data.removed, label ?? undefined, goneVenue)
             .then(() => client.invalidateQueries({ queryKey: ["watchlist"] }))
             .then(() => pushLog(`Đã đưa ${data.removed} trở lại danh sách`, "ok"))
             .catch((error: Error) => pushToast(`Không khôi phục được: ${error.message}`, "error"));
@@ -269,9 +279,9 @@ export default function App() {
     onError: (error: Error) => pushToast(`Không bỏ được symbol: ${error.message}`, "error"),
   });
 
-  const onAdd = useCallback((next: string, label: string) => {
+  const onAdd = useCallback((next: string, label: string, nextVenue: string) => {
     if (adding) return;
-    add.mutate({ symbol: next, label });
+    add.mutate({ symbol: next, label, venue: nextVenue });
   }, [add, adding]);
 
   const onRemove = useCallback((target: string) => {
@@ -335,6 +345,12 @@ export default function App() {
   const onTimeframe = useCallback((tf: Timeframe) => setTimeframe(tf), []);
   const onChartType = useCallback((t: ChartType) => update("chartType", t), [update]);
   const onSelectSymbol = useCallback((next: string) => setSymbol(next), []);
+  const onOpenSymbol = useCallback((next: string, tf?: Timeframe) => {
+    setSymbol(next);
+    if (tf) setTimeframe(tf);
+    setView("terminal");
+  }, []);
+  const onView = useCallback((v: "overview" | "terminal" | "portfolio") => setView(v), []);
   const toggleRight = useCallback(() => {
     if (wide) update("rightPanel", !settings.rightPanel);
     else setRightDrawer((v) => !v);
@@ -360,7 +376,13 @@ export default function App() {
         }
         return;
       }
-      if (e.key === "/") {
+      if (key === "o") {
+        setView("overview");
+      } else if (key === "c") {
+        setView("terminal");
+      } else if (key === "p") {
+        setView("portfolio");
+      } else if (e.key === "/") {
         e.preventDefault();
         setSearchOpen(true);
       } else if (e.key === "?") {
@@ -426,6 +448,8 @@ export default function App() {
         settings={settings}
         ingesting={ingest.isPending}
         fullscreen={fullscreen}
+        view={view}
+        onView={onView}
         onTimeframe={onTimeframe}
         onChartType={onChartType}
         onOpenSearch={() => setSearchOpen(true)}
@@ -441,6 +465,35 @@ export default function App() {
       />
 
       <div className="relative flex min-h-0 flex-1">
+        {view === "overview" ? (
+          <Overview
+            entries={entries}
+            livePrices={livePrices}
+            liveState={live.state}
+            health={health.data}
+            palette={palette}
+            ingesting={ingest.isPending}
+            onOpenSymbol={onOpenSymbol}
+            onRemove={onRemove}
+            onOpenSearch={() => setSearchOpen(true)}
+            onIngest={runIngest}
+            onToggleLive={() => update("live", !settings.live)}
+            liveEnabled={settings.live}
+          />
+        ) : view === "portfolio" ? (
+          <Portfolio
+            entries={paperEntries}
+            livePrices={livePrices}
+            liveState={live.state}
+            palette={palette}
+            onToast={pushToast}
+            onLog={pushLog}
+            onToggleLive={() => update("live", !settings.live)}
+            liveEnabled={settings.live}
+            onOpenSymbol={onOpenSymbol}
+          />
+        ) : (
+          <>
         <DrawingRail
           tool={tool}
           locked={locked}
@@ -510,6 +563,8 @@ export default function App() {
           <>
             <div className="absolute inset-0 z-40 bg-black/50" onClick={() => setRightDrawer(false)} aria-hidden="true" />
             <div className="absolute inset-y-0 right-0 z-50 flex max-w-full">{rightPanel}</div>
+          </>
+        )}
           </>
         )}
       </div>

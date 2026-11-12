@@ -1,7 +1,7 @@
-"""marketlab_web.live — nến đang chạy: Binance kline WS -> bộ nhớ -> SSE.
+"""marketlab_web.live — nến đang chạy: Binance kline WS + poll Yahoo -> bộ nhớ -> SSE.
 
 Kho TimescaleDB vẫn chỉ chứa nến ĐÃ ĐÔNG. Nến đang chạy nằm trong bộ nhớ của hub
-và được đẩy xuống client qua SSE; chỉ khi sàn báo đóng (k.x) mới upsert vào kho,
+và được đẩy xuống client qua SSE; chỉ khi nến đóng mới upsert vào kho,
 nên mọi chỉ số tính lại từ kho vẫn tái lập được.
 """
 from __future__ import annotations
@@ -9,12 +9,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
 import websockets
 
-from marketlab_web import db
+from marketlab_web import db, yahoo
 
 log = logging.getLogger("marketlab.live")
 
@@ -22,6 +23,7 @@ LIVE_TIMEFRAMES = ("1h", "4h", "1d")
 WS_URL = "wss://stream.binance.com:9443/stream"
 HEARTBEAT_SECONDS = 15
 WATCHLIST_POLL_SECONDS = 30
+YAHOO_POLL_SECONDS = 10
 RECONNECT_MAX_SECONDS = 30
 ROLLUP_BOUNDARY_MS = {"4h": 14_400_000, "1d": 86_400_000}
 
@@ -66,6 +68,7 @@ class LiveHub:
         self.state = "connecting"
         self._subs: set[asyncio.Queue] = set()
         self._task: asyncio.Task | None = None
+        self._yahoo_task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
     @staticmethod
@@ -75,16 +78,19 @@ class LiveHub:
     async def start(self) -> None:
         self._stop.clear()
         self._task = asyncio.create_task(self._run(), name="marketlab-live")
+        self._yahoo_task = asyncio.create_task(YahooPoller(self).run(), name="marketlab-yahoo")
 
     async def stop(self) -> None:
         self._stop.set()
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        for task in (self._task, self._yahoo_task):
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._task = None
+        self._yahoo_task = None
 
     def subscribe(self) -> asyncio.Queue:
         # Hàng đợi có chặn: client chậm thì bỏ bản tin cũ chứ không phình bộ nhớ.
@@ -145,14 +151,21 @@ class LiveHub:
 
     async def _pump(self, socket: Any, lookup: dict[str, tuple[str, str]],
                     symbols: set[str]) -> None:
+        checked = time.monotonic()
         while not self._stop.is_set():
             try:
                 raw = await asyncio.wait_for(socket.recv(), timeout=WATCHLIST_POLL_SECONDS)
             except asyncio.TimeoutError:
-                # Không có bản tin nào vẫn phải ngó watchlist: thêm/bớt symbol phải đổi stream.
                 if set(await self._load_symbols()) != symbols:
                     return
+                checked = time.monotonic()
                 continue
+            # Stream đông bản tin thì nhánh timeout không bao giờ chạy,
+            # nên phải ngó watchlist theo deadline ngay cả khi đang nhận đều.
+            if time.monotonic() - checked >= WATCHLIST_POLL_SECONDS:
+                checked = time.monotonic()
+                if set(await self._load_symbols()) != symbols:
+                    return
             message = json.loads(raw)
             target = lookup.get(message.get("stream", ""))
             if target is None:
@@ -165,13 +178,13 @@ class LiveHub:
             self._publish(bar)
             await self._persist(bar)
 
-    async def _persist(self, bar: dict[str, Any]) -> None:
+    async def _persist(self, bar: dict[str, Any], venue: str | None = None) -> None:
         """Chỉ nến gốc ĐÃ ĐÔNG mới ghi kho; 4h/1d là continuous aggregate của nến gốc."""
         if not bar["closed"] or bar["timeframe"] != self.base_timeframe:
             return
         try:
             ts_ms = int(datetime.fromisoformat(bar["ts"]).timestamp() * 1000)
-            await db.upsert_candles(self.pool, self.venue, bar["symbol"], bar["timeframe"], [(
+            await db.upsert_candles(self.pool, venue or self.venue, bar["symbol"], bar["timeframe"], [(
                 db.utc_ms_to_dt(ts_ms), bar["open"], bar["high"],
                 bar["low"], bar["close"], bar["volume"],
             )])
@@ -180,6 +193,74 @@ class LiveHub:
         except Exception as exc:  # noqa: BLE001 — kho lỗi không được làm đứt luồng giá
             log.warning("không ghi được nến đóng %s: %s", bar["symbol"], exc)
         self._publish({"type": "closed", "symbol": bar["symbol"], "timeframe": bar["timeframe"]})
+
+
+class YahooPoller:
+    """Cổ phiếu Mỹ không có WS nên poll chart mỗi 10s, chỉ đẩy nến 1h đang chạy.
+
+    Giá đóng suy ra từ nhịp poll không phải giá chốt phiên chính thức, nên worker
+    vẫn nạp lại nến đã đóng từ nguồn và upsert đè lên.
+    """
+
+    def __init__(self, hub: LiveHub) -> None:
+        self.hub = hub
+        self.exchange = yahoo.YahooExchange()
+        self._symbols: list[str] = []
+        self._checked = 0.0
+        self._forming: dict[str, list] = {}
+
+    async def run(self) -> None:
+        try:
+            while not self.hub._stop.is_set():
+                try:
+                    await self._tick()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — nguồn lỗi không được làm đứt hub
+                    log.warning("yahoo poll lỗi: %s", exc)
+                await asyncio.sleep(YAHOO_POLL_SECONDS)
+        finally:
+            await self.exchange.close()
+
+    async def _tick(self) -> None:
+        if time.monotonic() - self._checked >= WATCHLIST_POLL_SECONDS:
+            self._checked = time.monotonic()
+            entries = await db.fetch_watchlist(self.hub.pool)
+            self._symbols = sorted({e["symbol"] for e in entries if e["venue"] == "yahoo"})
+            for symbol in list(self._forming):
+                if symbol not in self._symbols:
+                    del self._forming[symbol]
+        for symbol in self._symbols:
+            result = await self.exchange.fetch_snapshot(symbol)
+            bar = yahoo.forming_bar(result, "1h", self.exchange.milliseconds())
+            key = LiveHub.key(symbol, "1h")
+            previous = self._forming.pop(symbol, None)
+            if previous is not None and (bar is None or bar[0] != previous[0]):
+                self.hub.bars.pop(key, None)
+                await self.hub._persist(self._bar(symbol, previous, True), venue="yahoo")
+            if bar is None:
+                continue
+            self._forming[symbol] = bar
+            payload = self._bar(symbol, bar, False)
+            self.hub.bars[key] = payload
+            self.hub._publish(payload)
+
+    @staticmethod
+    def _bar(symbol: str, row: list, closed: bool) -> dict[str, Any]:
+        ts_ms, open_, high, low, close, volume = row
+        return {
+            "type": "bar",
+            "symbol": symbol,
+            "venue": "yahoo",
+            "timeframe": "1h",
+            "ts": db.utc_ms_to_dt(ts_ms).isoformat(),
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "closed": closed,
+        }
 
 
 async def event_stream(hub: LiveHub, request: Any) -> Any:

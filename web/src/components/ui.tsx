@@ -49,6 +49,11 @@ const PATHS: Record<string, ReactNode> = {
   layers: <><path d="M8 2l6 3-6 3-6-3z" /><path d="M2 8l6 3 6-3M2 11l6 3 6-3" /></>,
   keyboard: <><rect x="1.5" y="4" width="13" height="8" rx="1" /><path d="M4 6.5h.5M6.5 6.5h.5M9 6.5h.5M11.5 6.5h.5M4.5 9.5h7" /></>,
   drag: <path d="M2 6h12M2 10h12" />,
+  sort: <path d="M5 6l3-3 3 3M5 10l3 3 3-3" />,
+  wallet: <><path d="M2.5 5A1.5 1.5 0 014 3.5h8.5V5" /><rect x="2.5" y="5" width="11.5" height="8" rx="1.5" /><path d="M10.5 9h3.5" /></>,
+  target: <><circle cx="8" cy="8" r="6" /><circle cx="8" cy="8" r="3" /><circle cx="8" cy="8" r="0.6" fill="currentColor" /></>,
+  swap: <><path d="M3 5.5h9M9.5 3l2.5 2.5L9.5 8" /><path d="M13 10.5H4M6.5 8L4 10.5 6.5 13" /></>,
+  scale: <><path d="M8 2.5v11M4 13.5h8" /><path d="M8 3.5L3.5 5.5M8 3.5l4.5 2" /><path d="M1.8 9.5a2 2 0 003.4 0L3.5 5.5zM10.8 9.5a2 2 0 003.4 0L12.5 5.5z" /></>,
 };
 
 export function Icon({ name, size = 16, className = "" }: { name: keyof typeof PATHS | string; size?: number; className?: string }) {
@@ -68,6 +73,34 @@ export function Icon({ name, size = 16, className = "" }: { name: keyof typeof P
     >
       {PATHS[name] ?? PATHS.info}
     </svg>
+  );
+}
+
+const COIN_BRAND: Record<string, string> = {
+  BTC: "#f7931a", ETH: "#627eea", SOL: "#14b8a6", BNB: "#f0b90b",
+  XRP: "#0088cc", ADA: "#0033ad", DOGE: "#c2a633", DOT: "#e6007a",
+  LINK: "#2a5ada", LTC: "#345d9d", AVAX: "#e84142", TRX: "#ef0027",
+  HYPE: "#078968", USDC: "#2775ca", ZEC: "#f4b728",
+};
+
+export function coinColor(symbol: string): string {
+  const base = symbol.split("/")[0] ?? symbol;
+  const brand = COIN_BRAND[base.toUpperCase()];
+  if (brand) return brand;
+  const hue = [...base].reduce((a, c, i) => a + c.charCodeAt(0) * (i + 7), 0) % 360;
+  return `hsl(${hue} 62% 46%)`;
+}
+
+export function CoinBadge({ symbol }: { symbol: string }) {
+  const base = symbol.split("/")[0] ?? symbol;
+  return (
+    <span
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-pill text-[10px] font-bold text-white"
+      style={{ background: coinColor(symbol) }}
+      aria-hidden="true"
+    >
+      {base.slice(0, 1)}
+    </span>
   );
 }
 

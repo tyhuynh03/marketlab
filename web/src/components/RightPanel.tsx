@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { fmtCompact, fmtPct, fmtPrice, fmtTime, type Candle, type Summary, type WatchEntry } from "../api";
+import { fmtCompact, fmtPct, fmtPrice, fmtTime, venueLabel, type Candle, type Summary, type WatchEntry } from "../api";
 import type { LiveState } from "../live";
 import { Empty, Icon, ToolButton } from "./ui";
 
@@ -121,7 +121,7 @@ export default function RightPanel({
               <Empty
                 icon="star"
                 title={entries.length === 0 ? "Danh sách trống" : "Không khớp bộ lọc"}
-                hint={entries.length === 0 ? "Bấm + để thêm symbol và nạp lịch sử từ Binance." : undefined}
+                hint={entries.length === 0 ? "Bấm + để thêm symbol và nạp lịch sử từ nguồn dữ liệu." : undefined}
               />
             )}
             {shown.map((e) => {
@@ -146,7 +146,7 @@ export default function RightPanel({
                         <span className="rounded-card bg-up/15 px-1 text-[9px] font-medium text-up">LIVE</span>
                       )}
                     </span>
-                    <span className="block truncate text-[10px] text-faint">{e.label ?? e.venue}</span>
+                    <span className="block truncate text-[10px] text-faint">{e.label ?? venueLabel(e.venue)}</span>
                   </button>
                   <Spark values={values} up={up} />
                   <button type="button" onClick={() => onSelect(e.symbol)} className="w-[78px] shrink-0 text-right">
@@ -165,14 +165,14 @@ export default function RightPanel({
             })}
           </div>
           <p className="shrink-0 border-t border-line px-2.5 py-1.5 text-[10px] leading-relaxed text-faint">
-            Giá trực tiếp từ luồng Binance qua backend; % so với nến đóng trước đó. Sparkline là 60 nến gần nhất.
+            Giá trực tiếp từ luồng backend (Binance WS / poll Yahoo); % so với nến đóng trước đó. Sparkline là 60 nến gần nhất.
           </p>
         </>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="border-b border-line px-3 py-2">
             <p className="text-[12px] font-semibold">{selected}</p>
-            <p className="text-[10px] uppercase text-faint">{venue} · {timeframe} · {candles.length} nến</p>
+            <p className="text-[10px] uppercase text-faint">{venueLabel(venue)} · {timeframe} · {candles.length} nến</p>
           </div>
 
           <h3 className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-faint">
@@ -214,7 +214,9 @@ export default function RightPanel({
             <p className="tnum text-[15px] font-semibold">{livePrice === null ? "—" : fmtPrice(livePrice)}</p>
             <p className="text-[10px] leading-relaxed text-faint">
               {liveState === "on"
-                ? "Luồng nến Binance qua backend; chỉ nến đóng mới ghi vào kho."
+                ? venue === "yahoo"
+                  ? "Poll Yahoo qua backend; chỉ nến đóng mới ghi vào kho."
+                  : "Luồng nến Binance qua backend; chỉ nến đóng mới ghi vào kho."
                 : liveState === "error"
                   ? "Không mở được luồng trực tiếp; kho nến vẫn cập nhật theo chu kỳ ingest."
                   : liveState === "connecting"
