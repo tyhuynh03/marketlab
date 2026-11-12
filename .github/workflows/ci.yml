@@ -53,7 +53,7 @@ jobs:
         # LIVE_ENABLED=false: runner o My hay bi Binance chan, va smoke khong can luong live.
         run: |
           cp .env.example .env
-          printf 'LIVE_ENABLED=false\n' >> .env
+          printf '\nLIVE_ENABLED=false\n' >> .env
       - name: Dung db + api (khong worker de khong cham san)
         run: docker compose up -d --build db api
       - name: Cho api khoe
