@@ -1,16 +1,61 @@
-# Chay sau khi tao venv: pip install -r requirements.txt
-# Ban dau de mo, slice 1 xong thi dong bang pip freeze (xem ghi chu README).
-ccxt
-asyncpg
-fastapi
-uvicorn[standard]
-websockets
-pandas
-numpy
-pydantic-settings
-APScheduler
-
-# test
-pytest
-pytest-asyncio
-httpx
+# Dong bang 2026-11-12 bang pip freeze cua container mlport-api-1 (python:3.11-slim),
+# dung ban da kiem chung: 124 pytest + 28 smoke CI + 35 ca browser.
+# Muon nang version: cai thu trong container, chay lai test, roi pip freeze de de file nay.
+# uvloop khong co wheel Windows nen gan marker de venv Windows van cai duoc.
+# Dependencies test (pytest, pytest-asyncio, httpx) nam chung danh sach nay.
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.5
+aiohttp-fast-zlib==0.3.0
+aiosignal==1.4.0
+annotated-doc==0.0.6
+annotated-types==0.8.0
+anyio==4.16.0
+APScheduler==3.11.3
+asyncpg==0.32.0
+attrs==26.1.0
+ccxt==4.5.92
+certifi==2026.10.23
+cffi==2.0.0
+charset-normalizer==3.4.7
+click==8.5.1
+coincurve==21.0.0
+cryptography==50.0.2
+fastapi==0.162.4
+frozenlist==1.8.0
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.9.0
+httpx==0.28.1
+idna==3.18
+iniconfig==2.3.1
+multidict==6.9.1
+numpy==2.4.6
+opentelemetry-api==1.45.2
+orjson==3.13.0
+packaging==26.3
+pandas==3.1.1
+pluggy==1.7.0
+propcache==0.5.2
+pycparser==3.0
+pydantic==2.14.3
+pydantic-settings==2.16.2
+pydantic_core==2.50.4
+Pygments==2.21.0
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1
+python-dateutil==4.0.0
+python-dotenv==1.2.4
+PyYAML==6.0.3
+requests==2.34.2
+starlette==1.10.0
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+tzdata==2026.6
+tzlocal==5.4.5
+urllib3==2.8.0
+uvicorn[standard]==0.54.0
+uvloop==0.22.1; sys_platform != "win32"
+watchfiles==1.3.0
+websockets==17.4
+yarl==1.25.1
+zlib-ng==1.0.0
