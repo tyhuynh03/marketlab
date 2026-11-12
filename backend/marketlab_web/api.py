@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 import ccxt
+import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -82,7 +83,7 @@ async def add_symbol(body: WatchlistIn) -> dict[str, Any]:
     settings: Any = app.state.settings
     venue = body.venue or settings.venue
     try:
-        symbol = db.normalize_symbol(body.symbol)
+        symbol = db.normalize_ticker(body.symbol) if venue == "yahoo" else db.normalize_symbol(body.symbol)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -91,7 +92,7 @@ async def add_symbol(body: WatchlistIn) -> dict[str, Any]:
         written = await ingest.ingest_symbol(
             app.state.pool, exchange, venue, symbol,
             settings.base_timeframe, settings.history_days)
-    except ccxt.BaseError as exc:
+    except (ccxt.BaseError, httpx.HTTPError, ValueError) as exc:
         raise HTTPException(
             status_code=422,
             detail=f"{venue} khong giao dich {symbol}: {exc}") from exc
@@ -110,12 +111,13 @@ async def add_symbol(body: WatchlistIn) -> dict[str, Any]:
 @app.delete("/api/watchlist")
 async def remove_symbol(symbol: str = Query(...), venue: str | None = Query(None)) -> dict[str, str]:
     settings: Any = app.state.settings
+    venue = venue or settings.venue
     try:
-        normalized = db.normalize_symbol(symbol)
+        normalized = db.normalize_ticker(symbol) if venue == "yahoo" else db.normalize_symbol(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     removed = await db.remove_watchlist(
-        app.state.pool, venue or settings.venue, normalized, settings.base_timeframe)
+        app.state.pool, venue, normalized, settings.base_timeframe)
     if not removed:
         raise HTTPException(status_code=404, detail=f"{normalized} khong co trong watchlist")
     return {"removed": normalized}
@@ -126,19 +128,23 @@ async def candles(
     symbol: str = Query(...),
     timeframe: str = Query("1h"),
     limit: int = Query(500, ge=2, le=5000),
+    venue: str | None = Query(None),
 ) -> dict[str, Any]:
     settings: Any = app.state.settings
+    venue = venue or settings.venue
     view = ROLLUP_VIEWS.get(timeframe)
-    if view:
-        rows = await db.fetch_rollup(app.state.pool, view, settings.venue, symbol, limit)
+    # Yahoo co nen ngay chinh thuc da nap san; rollup tu nen 1h cua venue nay lech
+    # khoi luong nen khong dung candle_1d.
+    if view and not (venue == "yahoo" and timeframe == "1d"):
+        rows = await db.fetch_rollup(app.state.pool, view, venue, symbol, limit)
     else:
-        rows = await db.fetch_candles(app.state.pool, settings.venue, symbol, timeframe, limit)
+        rows = await db.fetch_candles(app.state.pool, venue, symbol, timeframe, limit)
     if len(rows) < 2:
         raise HTTPException(
             status_code=404,
             detail=f"thieu du lieu cho {symbol} {timeframe} — chay worker ingest truoc",
         )
-    return {"symbol": symbol, "timeframe": timeframe, "candles": rows}
+    return {"symbol": symbol, "timeframe": timeframe, "venue": venue, "candles": rows}
 
 
 @app.get("/api/summary")
@@ -146,9 +152,12 @@ async def summary(
     symbol: str = Query(...),
     timeframe: str = Query("1h"),
     limit: int = Query(500, ge=2, le=5000),
+    venue: str | None = Query(None),
 ) -> dict[str, Any]:
-    payload = await candles(symbol=symbol, timeframe=timeframe, limit=limit)
-    result = metrics.summary(payload["candles"], timeframe)
+    settings: Any = app.state.settings
+    venue = venue or settings.venue
+    payload = await candles(symbol=symbol, timeframe=timeframe, limit=limit, venue=venue)
+    result = metrics.summary(payload["candles"], timeframe, metrics.periods_for(timeframe, venue))
     result["symbol"] = symbol
     result["timeframe"] = timeframe
     return result
@@ -158,27 +167,31 @@ async def summary(
 async def trigger_ingest(
     symbol: str | None = Query(None),
     days: int | None = Query(None, ge=1, le=365),
+    venue: str | None = Query(None),
 ) -> dict[str, int]:
     settings: Any = app.state.settings
-    exchange = await ingest.open_exchange(settings.venue)
     pool = app.state.pool
+    watchlist = await db.fetch_watchlist(pool)
+    if symbol:
+        targets = [{"venue": venue or settings.venue, "symbol": symbol,
+                    "timeframe": settings.base_timeframe}]
+    else:
+        targets = watchlist
+    exchanges: dict[str, Any] = {}
     try:
-        if symbol:
-            written = await ingest.ingest_symbol(
-                pool, exchange, settings.venue, symbol, settings.base_timeframe,
-                days or settings.history_days)
-            await db.refresh_rollups(pool)
-            return {symbol: written}
+        for target_venue in sorted({t["venue"] for t in targets}):
+            exchanges[target_venue] = await ingest.open_exchange(target_venue)
         result = {}
-        for entry in await db.fetch_watchlist(pool):
+        for target in targets:
             written = await ingest.ingest_symbol(
-                pool, exchange, entry["venue"], entry["symbol"], entry["timeframe"],
-                days or settings.history_days)
-            result[entry["symbol"]] = written
+                pool, exchanges[target["venue"]], target["venue"], target["symbol"],
+                target["timeframe"], days or settings.history_days)
+            result[target["symbol"]] = written
         await db.refresh_rollups(pool)
         return result
     finally:
-        await exchange.close()
+        for exchange in exchanges.values():
+            await exchange.close()
 
 
 class OrderIn(BaseModel):

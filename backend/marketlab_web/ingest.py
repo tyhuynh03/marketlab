@@ -9,13 +9,15 @@ from typing import Any, Iterable, Sequence
 
 import ccxt.async_support as ccxt
 
-from marketlab_web import db
+from marketlab_web import db, yahoo
 
 TIMEFRAME_MS = {"1m": 60_000, "5m": 300_000, "15m": 900_000,
                 "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000}
 
 
 async def open_exchange(venue: str) -> Any:
+    if venue == "yahoo":
+        return yahoo.YahooExchange()
     exchange_class = getattr(ccxt, venue)
     return exchange_class({"enableRateLimit": True})
 
@@ -61,25 +63,34 @@ async def ingest_symbol(pool, exchange: Any, venue: str, symbol: str,
                         timeframe: str, days: int) -> int:
     since_ms = exchange.milliseconds() - days * 86_400_000
     ohlcv = await fetch_history(exchange, symbol, timeframe, since_ms)
-    return await db.upsert_candles(pool, venue, symbol, timeframe, to_rows(ohlcv))
+    written = await db.upsert_candles(pool, venue, symbol, timeframe, to_rows(ohlcv))
+    # Nen ngay chinh thuc cua Yahoo khac rollup tu nen 1h: nen 1h thieu khoi luong
+    # khop lenh dinh ky, nen phai nap rieng thay vi doc candle_1d.
+    if venue == "yahoo" and timeframe != "1d":
+        daily = await fetch_history(exchange, symbol, "1d", since_ms)
+        await db.upsert_candles(pool, venue, symbol, "1d", to_rows(daily))
+    return written
 
 
 async def run_once(settings) -> dict[str, int]:
     pool = await db.create_pool(settings.database_url)
-    exchange = await open_exchange(settings.venue)
+    watchlist = await db.fetch_watchlist(pool)
+    exchanges: dict[str, Any] = {}
     try:
-        watchlist = await db.fetch_watchlist(pool)
+        for venue in sorted({entry["venue"] for entry in watchlist}):
+            exchanges[venue] = await open_exchange(venue)
         result = {}
         for entry in watchlist:
             written = await ingest_symbol(
-                pool, exchange, entry["venue"], entry["symbol"],
+                pool, exchanges[entry["venue"]], entry["venue"], entry["symbol"],
                 entry["timeframe"], settings.history_days,
             )
             result[entry["symbol"]] = written
         await db.refresh_rollups(pool)
         return result
     finally:
-        await exchange.close()
+        for exchange in exchanges.values():
+            await exchange.close()
         await pool.close()
 
 

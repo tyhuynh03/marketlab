@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { TIMEFRAMES, type Timeframe } from "../api";
+import { TIMEFRAMES, venueLabel, type Timeframe } from "../api";
 import { CHART_TYPES, type ChartType, type Settings } from "../store";
 import { Divider, Icon, MenuItem, Popover, ToolButton } from "./ui";
 
@@ -119,7 +119,7 @@ export default function TopBar({
       >
         <Icon name="search" size={15} className="text-dim" />
         {symbol}
-        <span className="rounded-card border border-line px-1 text-[10px] font-normal uppercase text-faint">{venue}</span>
+        <span className="rounded-card border border-line px-1 text-[10px] font-normal uppercase text-faint">{venueLabel(venue)}</span>
       </button>
 
       <Divider vertical />

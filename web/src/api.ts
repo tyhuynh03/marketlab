@@ -10,6 +10,7 @@ export type Candle = {
 export type CandlesResponse = {
   symbol: string;
   timeframe: string;
+  venue: string;
   candles: Candle[];
 };
 
@@ -72,15 +73,19 @@ export const fetchHealth = (signal?: AbortSignal) => get<Health>("/health", sign
 export const fetchWatchlist = (signal?: AbortSignal) =>
   get<WatchEntry[]>("/api/watchlist", signal);
 
-export const fetchCandles = (symbol: string, timeframe: string, limit: number, signal?: AbortSignal) =>
+export const fetchCandles = (
+  symbol: string, timeframe: string, limit: number, venue: string, signal?: AbortSignal,
+) =>
   get<CandlesResponse>(
-    `/api/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`,
+    `/api/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}&venue=${encodeURIComponent(venue)}`,
     signal,
   );
 
-export const fetchSummary = (symbol: string, timeframe: string, limit: number, signal?: AbortSignal) =>
+export const fetchSummary = (
+  symbol: string, timeframe: string, limit: number, venue: string, signal?: AbortSignal,
+) =>
   get<Summary>(
-    `/api/summary?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`,
+    `/api/summary?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=${limit}&venue=${encodeURIComponent(venue)}`,
     signal,
   );
 
@@ -96,20 +101,28 @@ export async function triggerIngest(symbol?: string, days?: number): Promise<Rec
   return (await res.json()) as Record<string, number>;
 }
 
-export async function addSymbol(symbol: string, label?: string): Promise<{ entry: WatchEntry; written: number }> {
+export async function addSymbol(
+  symbol: string, label?: string, venue?: string,
+): Promise<{ entry: WatchEntry; written: number }> {
   const res = await fetch("/api/watchlist", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol, label: label ?? null }),
+    body: JSON.stringify({ symbol, label: label ?? null, venue: venue ?? null }),
   });
   if (!res.ok) throw new Error(truncate(await res.text().catch(() => `${res.status}`)));
   return (await res.json()) as { entry: WatchEntry; written: number };
 }
 
-export async function removeSymbol(symbol: string): Promise<{ removed: string }> {
-  const res = await fetch(`/api/watchlist?symbol=${encodeURIComponent(symbol)}`, { method: "DELETE" });
+export async function removeSymbol(symbol: string, venue?: string): Promise<{ removed: string }> {
+  const query = venue ? `&venue=${encodeURIComponent(venue)}` : "";
+  const res = await fetch(`/api/watchlist?symbol=${encodeURIComponent(symbol)}${query}`, { method: "DELETE" });
   if (!res.ok) throw new Error(truncate(await res.text().catch(() => `${res.status}`)));
   return (await res.json()) as { removed: string };
+}
+
+/** nhãn venue trên UI: cổ phiếu Mỹ hiện là "US", crypto giữ tên sàn. */
+export function venueLabel(venue: string): string {
+  return venue === "yahoo" ? "US" : venue;
 }
 
 /** Số chữ số thập phân vừa đủ đọc: SHIB cần 8, BTC chỉ cần 2. */

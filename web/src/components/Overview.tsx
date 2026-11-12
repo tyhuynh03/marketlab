@@ -10,6 +10,7 @@ import {
   fmtCompact,
   fmtPct,
   fmtPrice,
+  venueLabel,
   type Candle,
   type Health,
   type Summary,
@@ -188,16 +189,16 @@ export default function Overview({
 
   const candleQueries = useQueries({
     queries: entries.map((e) => ({
-      queryKey: ["ov-candles", e.symbol, tf, window],
-      queryFn: ({ signal }: { signal: AbortSignal }) => fetchCandles(e.symbol, tf, window, signal),
+      queryKey: ["ov-candles", e.symbol, tf, window, e.venue],
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchCandles(e.symbol, tf, window, e.venue, signal),
       staleTime: 30_000,
     })),
   });
   const summaryQueries = useQueries({
     queries: entries.flatMap((e) =>
       TIMEFRAMES.map((t) => ({
-        queryKey: ["ov-summary", e.symbol, t, window],
-        queryFn: ({ signal }: { signal: AbortSignal }) => fetchSummary(e.symbol, t, window, signal),
+        queryKey: ["ov-summary", e.symbol, t, window, e.venue],
+        queryFn: ({ signal }: { signal: AbortSignal }) => fetchSummary(e.symbol, t, window, e.venue, signal),
         staleTime: 60_000,
         retry: false,
       })),
@@ -370,7 +371,11 @@ export default function Overview({
         <span className="flex items-center gap-1.5 pr-1 text-[13px] font-semibold">
           <Icon name="layers" size={15} className="text-accent" /> Tổng quan
         </span>
-        <span className="rounded-card border border-line px-1.5 text-[10px] uppercase text-faint">binance</span>
+        {[...new Set(entries.map((e) => e.venue))].sort().map((v) => (
+          <span key={v} className="rounded-card border border-line px-1.5 text-[10px] uppercase text-faint">
+            {venueLabel(v)}
+          </span>
+        ))}
 
         <div className="flex items-center rounded-card border border-line" role="group" aria-label="Khung của cột thay đổi">
           {TIMEFRAMES.map((t) => (
@@ -426,7 +431,7 @@ export default function Overview({
       <div className="flex flex-col gap-3 p-3">
         {entries.length === 0 ? (
           <div className="rounded-card border border-line bg-panel">
-            <Empty icon="star" title="Chưa có symbol nào trong danh sách" hint="Thêm symbol để dựng tổng quan thị trường; lịch sử nạp tự động từ Binance." />
+            <Empty icon="star" title="Chưa có symbol nào trong danh sách" hint="Thêm symbol để dựng tổng quan thị trường; lịch sử nạp tự động từ nguồn dữ liệu." />
             <div className="flex justify-center pb-5">
               <button type="button" onClick={onOpenSearch} className="flex h-7 items-center gap-1.5 rounded-card bg-accent px-3 text-[12px] font-medium text-white hover:opacity-90">
                 <Icon name="plus" size={14} /> Thêm symbol đầu tiên
@@ -481,9 +486,9 @@ export default function Overview({
             <section ref={tableRef} className="scroll-mt-14 rounded-card border border-line bg-panel">
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div>
-                  <h2 className="text-[13px] font-semibold">Top token trong danh sách theo dõi</h2>
+                  <h2 className="text-[13px] font-semibold">Symbol trong danh sách theo dõi</h2>
                   <p className="text-[10px] text-faint">
-                    Giá mới nhất, thay đổi theo khung {tf}, khối lượng cửa sổ {window} nến quy USDT · bấm tiêu đề cột để sắp xếp
+                    Giá mới nhất, thay đổi theo khung {tf}, khối lượng cửa sổ {window} nến quy USD · bấm tiêu đề cột để sắp xếp
                   </p>
                 </div>
                 <span className="tnum text-[11px] text-dim">{shown.length}/{entries.length} symbol · kho {fmtCompact(health?.candles)} nến</span>
@@ -513,7 +518,7 @@ export default function Overview({
                             </select>
                           </span>
                         </th>
-                        {header("volume", "KL cửa sổ (USDT)")}
+                        {header("volume", "KL cửa sổ (USD)")}
                         <th className="whitespace-nowrap px-3 py-2 text-center font-normal text-[10px] uppercase tracking-wide text-faint">Xu hướng</th>
                         {header("sharpe", "Sharpe")}
                         <th className="whitespace-nowrap px-2 py-2 text-right font-normal text-[10px] uppercase tracking-wide text-faint">Hành động</th>
@@ -535,6 +540,11 @@ export default function Overview({
                                 <span className="min-w-0">
                                   <span className="flex items-center gap-1.5 font-semibold">
                                     {s.e.symbol.split("/")[0]}
+                                    {s.e.venue !== "binance" && (
+                                      <span className="rounded-card border border-line px-1 text-[9px] font-normal text-faint">
+                                        {venueLabel(s.e.venue)}
+                                      </span>
+                                    )}
                                     {s.streamed !== undefined && <span className="rounded-card bg-up/15 px-1 text-[9px] font-medium text-up">LIVE</span>}
                                   </span>
                                   <span className="block truncate text-[10px] text-faint">{s.e.label ?? s.e.symbol}</span>
@@ -627,7 +637,7 @@ export default function Overview({
             </div>
 
             <p className="pb-2 text-[10px] leading-relaxed text-faint">
-              Giá trực tiếp từ luồng Binance qua backend (nhịp ~2s); cột thay đổi so nến đóng trước của khung đang chọn.
+              Giá trực tiếp từ luồng backend (crypto nhịp ~2s, cổ phiếu Mỹ ~10s); cột thay đổi so nến đóng trước của khung đang chọn.
               Kho TimescaleDB chỉ chứa nến đã đóng nên Sharpe / heatmap tái lập được, không lẫn nến đang chạy.
               Chỉ số equal-weight chuẩn hoá mỗi symbol về 100 tại nến đầu cửa sổ rồi trung bình; điểm cuối nối thêm giá live.
             </p>

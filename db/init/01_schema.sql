@@ -87,5 +87,11 @@ INSERT INTO watchlist (venue, symbol, timeframe, label) VALUES
     ('binance', 'DOT/USDT', '1h', 'Polkadot'),
     ('binance', 'LTC/USDT', '1h', 'Litecoin'),
     ('binance', 'BCH/USDT', '1h', 'Bitcoin Cash'),
-    ('binance', 'UNI/USDT', '1h', 'Uniswap')
+    ('binance', 'UNI/USDT', '1h', 'Uniswap'),
+    ('yahoo', 'AAPL', '1h', 'Apple'),
+    ('yahoo', 'MSFT', '1h', 'Microsoft'),
+    ('yahoo', 'NVDA', '1h', 'NVIDIA'),
+    ('yahoo', 'AMZN', '1h', 'Amazon'),
+    ('yahoo', 'GOOGL', '1h', 'Alphabet'),
+    ('yahoo', 'TSLA', '1h', 'Tesla')
 ON CONFLICT DO NOTHING;

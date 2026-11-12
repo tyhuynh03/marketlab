@@ -1,12 +1,15 @@
-// Goi y cho o tim kiem. Kiem chung voi Binance spot markets ngay 2026-11-11
+// Goi y cho o tim kiem. Crypto kiem chung voi Binance spot markets ngay 2026-11-11
 // (ccxt load_markets, loc spot + active + quote USDT) nen moi dong deu giao dich that.
-export type CatalogEntry = { symbol: string; name: string };
+// Co phieu My (venue "yahoo") lay tu Yahoo Finance, chi xem — khong vao so paper.
+export type CatalogEntry = { symbol: string; name: string; venue?: string };
 
 export const CATALOG: CatalogEntry[] = [
+  { symbol: "AAPL", name: "Apple", venue: "yahoo" },
   { symbol: "AAVE/USDT", name: "Aave" },
   { symbol: "ADA/USDT", name: "Cardano" },
   { symbol: "ALGO/USDT", name: "Algorand" },
   { symbol: "ALICE/USDT", name: "MyNeighborAlice" },
+  { symbol: "AMZN", name: "Amazon", venue: "yahoo" },
   { symbol: "ANKR/USDT", name: "Ankr" },
   { symbol: "APE/USDT", name: "ApeCoin" },
   { symbol: "APT/USDT", name: "Aptos" },
@@ -43,6 +46,7 @@ export const CATALOG: CatalogEntry[] = [
   { symbol: "FLOKI/USDT", name: "Floki" },
   { symbol: "FLOW/USDT", name: "Flow" },
   { symbol: "GALA/USDT", name: "Gala" },
+  { symbol: "GOOGL", name: "Alphabet", venue: "yahoo" },
   { symbol: "GRT/USDT", name: "The Graph" },
   { symbol: "HBAR/USDT", name: "Hedera" },
   { symbol: "HOT/USDT", name: "Holo" },
@@ -58,9 +62,11 @@ export const CATALOG: CatalogEntry[] = [
   { symbol: "LINK/USDT", name: "Chainlink" },
   { symbol: "LTC/USDT", name: "Litecoin" },
   { symbol: "MANA/USDT", name: "Decentraland" },
+  { symbol: "MSFT", name: "Microsoft", venue: "yahoo" },
   { symbol: "NEAR/USDT", name: "NEAR Protocol" },
   { symbol: "NEO/USDT", name: "Neo" },
   { symbol: "NOT/USDT", name: "Notcoin" },
+  { symbol: "NVDA", name: "NVIDIA", venue: "yahoo" },
   { symbol: "ONDO/USDT", name: "Ondo" },
   { symbol: "ONE/USDT", name: "Harmony" },
   { symbol: "ONT/USDT", name: "Ontology" },
@@ -92,6 +98,7 @@ export const CATALOG: CatalogEntry[] = [
   { symbol: "TIA/USDT", name: "Celestia" },
   { symbol: "TLM/USDT", name: "Alien Worlds" },
   { symbol: "TRX/USDT", name: "TRON" },
+  { symbol: "TSLA", name: "Tesla", venue: "yahoo" },
   { symbol: "TWT/USDT", name: "Trust Wallet" },
   { symbol: "UNI/USDT", name: "Uniswap" },
   { symbol: "VET/USDT", name: "VeChain" },

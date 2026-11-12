@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fmtCompact, fmtNum, fmtPct, fmtPrice, fmtTime, type Candle, type Summary } from "../api";
+import { fmtCompact, fmtNum, fmtPct, fmtPrice, fmtTime, venueLabel, type Candle, type Summary } from "../api";
 import { drawdownSeries, equitySeries } from "../indicators";
 import type { BottomTab } from "../store";
 import { Empty, Icon, ToolButton } from "./ui";
@@ -298,13 +298,14 @@ export default function BottomPanel({
             <div className="space-y-1.5">
               <h3 className="text-[11px] uppercase tracking-wide text-faint">Đường đi của dữ liệu</h3>
               <p className="text-dim">
-                ccxt <code className="text-ink">fetch_ohlcv</code> → UPSERT vào hypertable{" "}
-                <code className="text-ink">candle</code> (TimescaleDB) → continuous aggregate{" "}
+                Crypto: ccxt <code className="text-ink">fetch_ohlcv</code>; cổ phiếu Mỹ: chart Yahoo. Cả hai UPSERT vào
+                hypertable <code className="text-ink">candle</code> (TimescaleDB) → continuous aggregate{" "}
                 <code className="text-ink">candle_4h</code> / <code className="text-ink">candle_1d</code> → FastAPI → trang này.
               </p>
               <p className="text-dim">
                 Khung <b className="text-ink">1h</b> đọc nến gốc; <b className="text-ink">4h</b> và{" "}
-                <b className="text-ink">1d</b> đọc continuous aggregate nên không lưu trùng dữ liệu.
+                <b className="text-ink">1d</b> đọc continuous aggregate nên không lưu trùng dữ liệu. Riêng cổ phiếu Mỹ,
+                nến <b className="text-ink">1d</b> là nến ngày chính thức nạp từ Yahoo vì rollup từ 1h thiếu khối lượng khớp lệnh định kỳ.
               </p>
             </div>
             <div className="space-y-1.5">
@@ -319,7 +320,7 @@ export default function BottomPanel({
             </div>
             <div className="tnum space-y-1 text-dim">
               <h3 className="text-[11px] uppercase tracking-wide text-faint">Phiên hiện tại</h3>
-              <p>Symbol: <span className="text-ink">{symbol}</span> · {venue} · {timeframe}</p>
+              <p>Symbol: <span className="text-ink">{symbol}</span> · {venueLabel(venue)} · {timeframe}</p>
               <p>Số nến đang tải: <span className="text-ink">{candles.length}</span></p>
               <p>Lần nạp gần nhất: <span className="text-ink">{lastIngest ?? "chưa nạp trong phiên này"}</span></p>
             </div>
@@ -331,7 +332,7 @@ export default function BottomPanel({
                 className="flex h-7 items-center gap-1.5 rounded-card border border-line px-2.5 text-[12px] hover:bg-hover disabled:opacity-50"
               >
                 <Icon name="refresh" size={14} className={ingesting ? "ml-pulse" : ""} />
-                {ingesting ? "Đang nạp từ Binance…" : "Nạp lại toàn bộ watchlist"}
+                {ingesting ? "Đang nạp từ nguồn…" : "Nạp lại toàn bộ watchlist"}
               </button>
             </div>
           </div>

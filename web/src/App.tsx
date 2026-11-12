@@ -127,13 +127,19 @@ export default function App() {
     queryFn: ({ signal }) => fetchWatchlist(signal),
     staleTime: 15_000,
   });
+  const entries = watchlist.data ?? [];
+  const selectedEntry = entries.find((e) => e.symbol === symbol);
+  const venue = selectedEntry?.venue ?? "binance";
+  // sổ paper chỉ ghi crypto nên vé lệnh không được mời gọi cổ phiếu Mỹ
+  const paperEntries = useMemo(() => entries.filter((e) => e.venue === "binance"), [entries]);
+
   const candles = useQuery({
-    queryKey: ["candles", symbol, timeframe, limit],
-    queryFn: ({ signal }) => fetchCandles(symbol, timeframe, limit, signal),
+    queryKey: ["candles", symbol, timeframe, limit, venue],
+    queryFn: ({ signal }) => fetchCandles(symbol, timeframe, limit, venue, signal),
   });
   const summary = useQuery({
-    queryKey: ["summary", symbol, timeframe, limit],
-    queryFn: ({ signal }) => fetchSummary(symbol, timeframe, limit, signal),
+    queryKey: ["summary", symbol, timeframe, limit, venue],
+    queryFn: ({ signal }) => fetchSummary(symbol, timeframe, limit, venue, signal),
   });
   const health = useQuery({
     queryKey: ["health"],
@@ -142,11 +148,10 @@ export default function App() {
     refetchInterval: 60_000,
   });
 
-  const entries = watchlist.data ?? [];
   const sparkQueries = useQueries({
     queries: entries.map((e) => ({
-      queryKey: ["spark", e.symbol, e.timeframe],
-      queryFn: ({ signal }: { signal: AbortSignal }) => fetchCandles(e.symbol, e.timeframe, 60, signal),
+      queryKey: ["spark", e.symbol, e.timeframe, e.venue],
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchCandles(e.symbol, e.timeframe, 60, e.venue, signal),
       staleTime: 60_000,
     })),
   });
@@ -169,8 +174,6 @@ export default function App() {
 
   const rows = candles.data?.candles ?? [];
   const last = rows.length > 0 ? rows[rows.length - 1] : undefined;
-  const selectedEntry = entries.find((e) => e.symbol === symbol);
-  const venue = selectedEntry?.venue ?? "binance";
 
   /* ---------- realtime: nến đang chạy từ hub backend, kho vẫn chỉ nến đã đóng ---------- */
   const onLiveClosed = useCallback((symbols: string[]) => {
@@ -216,7 +219,7 @@ export default function App() {
       const parts = Object.entries(result).map(([s, n]) => `${s}: ${n}`);
       setLastIngest(`${new Date().toISOString().slice(11, 19)} UTC`);
       pushLog(`Nạp xong — ${parts.join(" · ")}`, "ok");
-      pushToast(`Đã nạp ${parts.length} symbol từ Binance.`, "ok");
+      pushToast(`Đã nạp ${parts.length} symbol.`, "ok");
     },
     onError: (error: Error) => {
       pushLog(`Nạp dữ liệu thất bại: ${error.message}`, "error");
@@ -226,12 +229,13 @@ export default function App() {
 
   const runIngest = useCallback(() => {
     if (ingest.isPending) return;
-    pushLog("Bắt đầu nạp lại toàn bộ watchlist từ Binance");
+    pushLog("Bắt đầu nạp lại toàn bộ watchlist");
     ingest.mutate();
   }, [ingest, pushLog]);
 
   const add = useMutation({
-    mutationFn: ({ symbol: next, label }: { symbol: string; label: string }) => addSymbol(next, label),
+    mutationFn: ({ symbol: next, label, venue: nextVenue }: { symbol: string; label: string; venue: string }) =>
+      addSymbol(next, label, nextVenue),
     onMutate: ({ symbol: next }) => {
       setAdding(next);
       setAddError(null);
@@ -254,15 +258,18 @@ export default function App() {
   });
 
   const remove = useMutation({
-    mutationFn: (target: string) => removeSymbol(target),
+    mutationFn: (target: string) =>
+      removeSymbol(target, entries.find((e) => e.symbol === target)?.venue),
     onSuccess: (data, target) => {
-      const label = entries.find((e) => e.symbol === target)?.label ?? null;
+      const gone = entries.find((e) => e.symbol === target);
+      const label = gone?.label ?? null;
+      const goneVenue = gone?.venue;
       void client.invalidateQueries({ queryKey: ["watchlist"] });
       pushLog(`Bỏ ${data.removed} khỏi danh sách theo dõi`);
       pushToast(`Đã bỏ ${data.removed}. Nến đã nạp vẫn còn trong kho.`, "info", {
         label: "Hoàn tác",
         run: () => {
-          addSymbol(data.removed, label ?? undefined)
+          addSymbol(data.removed, label ?? undefined, goneVenue)
             .then(() => client.invalidateQueries({ queryKey: ["watchlist"] }))
             .then(() => pushLog(`Đã đưa ${data.removed} trở lại danh sách`, "ok"))
             .catch((error: Error) => pushToast(`Không khôi phục được: ${error.message}`, "error"));
@@ -272,9 +279,9 @@ export default function App() {
     onError: (error: Error) => pushToast(`Không bỏ được symbol: ${error.message}`, "error"),
   });
 
-  const onAdd = useCallback((next: string, label: string) => {
+  const onAdd = useCallback((next: string, label: string, nextVenue: string) => {
     if (adding) return;
-    add.mutate({ symbol: next, label });
+    add.mutate({ symbol: next, label, venue: nextVenue });
   }, [add, adding]);
 
   const onRemove = useCallback((target: string) => {
@@ -475,7 +482,7 @@ export default function App() {
           />
         ) : view === "portfolio" ? (
           <Portfolio
-            entries={entries}
+            entries={paperEntries}
             livePrices={livePrices}
             liveState={live.state}
             palette={palette}

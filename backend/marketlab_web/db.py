@@ -9,6 +9,7 @@ from typing import Any, Iterable, Sequence
 import asyncpg
 
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,20}/[A-Z0-9]{2,10}\Z")
+TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}\Z")
 
 
 def normalize_symbol(raw: str, quote: str = "USDT") -> str:
@@ -19,6 +20,18 @@ def normalize_symbol(raw: str, quote: str = "USDT") -> str:
     if not SYMBOL_RE.match(symbol):
         raise ValueError(f"symbol {raw!r} khong hop le (can dang BASE/QUOTE, vi du BTC/USDT)")
     return symbol
+
+
+def normalize_ticker(raw: str) -> str:
+    """Co phieu My khong co cap quote: 'aapl' -> 'AAPL', cho phep dau cham/gach (BRK.B).
+
+    Khong noi khoang trang nhu normalize_symbol: 'BRK B' ma thanh 'BRKB' la doi
+    sang mot ma khac co that, nen phai tu choi thay vi doan.
+    """
+    ticker = raw.strip().upper()
+    if not TICKER_RE.match(ticker):
+        raise ValueError(f"ticker {raw!r} khong hop le (vi du AAPL, MSFT, BRK.B)")
+    return ticker
 
 UPSERT_SQL = """
 INSERT INTO candle (venue, symbol, timeframe, ts, open, high, low, close, volume)

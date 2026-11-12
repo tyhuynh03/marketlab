@@ -18,6 +18,16 @@ import pandas as pd
 
 PERIODS_PER_YEAR = {"1m": 525_600, "5m": 105_120, "15m": 35_040,
                     "1h": 8_760, "4h": 2_190, "1d": 365, "1w": 52}
+# Co phieu My chi giao dich 6.5h/ngay, 252 ngay/nen — dung nhip crypto se phong Sharpe len ~2.3 lan.
+US_PERIODS_PER_YEAR = {"1h": 1_638, "4h": 409.5, "1d": 252, "1w": 52}
+
+
+def periods_for(timeframe: str, venue: str) -> float:
+    table = US_PERIODS_PER_YEAR if venue == "yahoo" else PERIODS_PER_YEAR
+    ppy = table.get(timeframe)
+    if ppy is None:
+        raise ValueError(f"khong ro periods_per_year cho timeframe {timeframe!r}")
+    return ppy
 
 
 def closes(candles: Sequence[dict[str, Any]]) -> pd.Series:
@@ -97,9 +107,11 @@ def calmar(series: pd.Series, periods_per_year: float) -> float:
     return float(annualized_return(series, periods_per_year) / abs(mdd))
 
 
-def summary(candles: Sequence[dict[str, Any]], timeframe: str) -> dict[str, Any]:
+def summary(candles: Sequence[dict[str, Any]], timeframe: str,
+            ppy: float | None = None) -> dict[str, Any]:
     series = closes(candles)
-    ppy = PERIODS_PER_YEAR.get(timeframe)
+    if ppy is None:
+        ppy = PERIODS_PER_YEAR.get(timeframe)
     if ppy is None:
         raise ValueError(f"khong ro periods_per_year cho timeframe {timeframe!r}")
     if len(series) < 2:
