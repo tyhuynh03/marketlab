@@ -25,10 +25,12 @@ INITIAL_CAPITAL = Decimal("100000")
 Q8 = Decimal("0.00000001")
 HOUR = timedelta(hours=1)
 PERIODS_PER_YEAR = metrics.PERIODS_PER_YEAR["1h"]
+PAPER_LOCK = "marketlab:paper"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS paper_journal (
     id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    seq       bigint GENERATED ALWAYS AS IDENTITY,
     ts        timestamptz NOT NULL,
     kind      text NOT NULL,
     symbol    text,
@@ -67,6 +69,14 @@ def q8(x: Decimal) -> Decimal:
 async def ensure_schema(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as conn:
         await conn.execute(SCHEMA)
+        # Volume cu da co bang: CREATE IF NOT EXISTS khong them cot moi.
+        await conn.execute(
+            "ALTER TABLE paper_journal ADD COLUMN IF NOT EXISTS seq bigint GENERATED ALWAYS AS IDENTITY")
+
+
+async def _lock(conn: asyncpg.Connection) -> None:
+    """READ COMMITTED cho phep hai transaction cung doc cash roi cung ghi -> tieu qua tien."""
+    await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", PAPER_LOCK)
 
 
 def _legs(kind: str, symbol: str | None, qty: Decimal, exec_price: Decimal,
@@ -160,11 +170,12 @@ async def place_order(pool: asyncpg.Pool, *, symbol: str, side: str, qty: Decima
         raise ValueError("qty phai > 0")
     qty = q8(qty)
     async with pool.acquire() as conn:
-        if idem_key:
-            old = await conn.fetchrow("SELECT id FROM paper_journal WHERE idem_key = $1", idem_key)
-            if old:
-                return {"duplicate": True, "id": str(old["id"])}
         async with conn.transaction():
+            await _lock(conn)
+            if idem_key:
+                old = await conn.fetchrow("SELECT id FROM paper_journal WHERE idem_key = $1", idem_key)
+                if old:
+                    return {"duplicate": True, "id": str(old["id"])}
             st = await state(conn)
             if side == "buy":
                 exec_price = q8(mark * (1 + SLIPPAGE))
@@ -258,10 +269,24 @@ async def _hourly_marks(conn: asyncpg.Connection, venue: str, symbols: list[str]
     return out
 
 
+async def _marks_at(conn: asyncpg.Connection, venue: str, symbols: list[str],
+                    ts: datetime) -> dict[str, float]:
+    """Nen dong gan nhat tai/truoc ts. Kho chi chua nen da dong nen gio hien tai
+    khong co mark — phai gia von bang gia dong truoc do, khong phai 0."""
+    if not symbols:
+        return {}
+    rows = await conn.fetch("""
+        SELECT DISTINCT ON (symbol) symbol, close FROM candle
+        WHERE venue=$1 AND timeframe='1h' AND symbol = ANY($2::text[]) AND ts <= $3
+        ORDER BY symbol, ts DESC
+    """, venue, symbols, ts)
+    return {r["symbol"]: float(r["close"]) for r in rows}
+
+
 async def equity(pool: asyncpg.Pool, venue: str, benchmark: str = "btc") -> dict[str, Any]:
     """Replay journal tren luoi gio -> NAV + benchmark + underwater. Khong luu vet."""
     async with pool.acquire() as conn:
-        events = await conn.fetch("SELECT * FROM paper_journal ORDER BY ts, id")
+        events = await conn.fetch("SELECT * FROM paper_journal ORDER BY ts, seq")
         if not events:
             return {"points": [], "metrics": {}, "inception": None}
         inception = events[0]["ts"].replace(minute=0, second=0, microsecond=0)
@@ -269,6 +294,8 @@ async def equity(pool: asyncpg.Pool, venue: str, benchmark: str = "btc") -> dict
         marks = await _hourly_marks(conn, venue, symbols, inception)
         bench_syms = ["BTC/USDT"] if benchmark == "btc" else ["BTC/USDT", "ETH/USDT"]
         bench_marks = await _hourly_marks(conn, venue, bench_syms, inception)
+        last_mark = await _marks_at(conn, venue, symbols, inception)
+        last_bench = await _marks_at(conn, venue, bench_syms, inception)
         capital = float(-sum((r["amount"] for r in await conn.fetch(
             "SELECT amount FROM paper_posting WHERE account='CAPITAL'")), Decimal(0)))
     grid_end = max((max(m) for m in marks.values() if m), default=inception)
@@ -278,8 +305,6 @@ async def equity(pool: asyncpg.Pool, venue: str, benchmark: str = "btc") -> dict
     cost: dict[str, Decimal] = {}
     ei = 0
     points = []
-    last_mark: dict[str, float] = {}
-    last_bench: dict[str, float] = {}
     bench_qty: dict[str, float] = {}
     for h in range(hours):
         ts = inception + h * HOUR
@@ -304,7 +329,7 @@ async def equity(pool: asyncpg.Pool, venue: str, benchmark: str = "btc") -> dict
             if ts in bench_marks.get(s, {}):
                 last_bench[s] = bench_marks[s][ts]
         nav = float(cash) + sum(float(q) * last_mark.get(s, 0.0) for s, q in qty.items() if q > 0)
-        if not bench_qty and h == 0:
+        if not bench_qty and all(last_bench.get(s) for s in bench_syms):
             split = {"BTC/USDT": 1.0} if benchmark == "btc" else {"BTC/USDT": 0.8, "ETH/USDT": 0.2}
             for s, w in split.items():
                 m0 = last_bench.get(s)
@@ -369,7 +394,7 @@ async def ledger(pool: asyncpg.Pool, tab: str, limit: int = 200) -> list[dict[st
             rows = await conn.fetch("""
                 SELECT j.ts, j.kind, j.symbol, j.source, j.note, p.amount
                 FROM paper_posting p JOIN paper_journal j ON j.id = p.journal_id
-                WHERE p.account = 'CASH' ORDER BY j.ts, j.id
+                WHERE p.account = 'CASH' ORDER BY j.ts, j.seq
             """)
             balance = Decimal(0)
             out = []
@@ -381,7 +406,7 @@ async def ledger(pool: asyncpg.Pool, tab: str, limit: int = 200) -> list[dict[st
             return out[-limit:][::-1]
         rows = await conn.fetch("""
             SELECT ts, kind, symbol, qty, price, fee, realized, source, id, note
-            FROM paper_journal WHERE kind IN ('buy','sell') ORDER BY ts DESC, id DESC LIMIT $1
+            FROM paper_journal WHERE kind IN ('buy','sell') ORDER BY ts DESC, seq DESC LIMIT $1
         """, limit)
     return [{"ts": r["ts"].isoformat(), "kind": r["kind"], "symbol": r["symbol"],
              "qty": float(r["qty"]), "price": float(r["price"]), "fee": float(r["fee"]),
@@ -417,11 +442,17 @@ async def rebalance_plan(pool: asyncpg.Pool, hub: Any, venue: str) -> list[dict[
 async def rebalance_execute(pool: asyncpg.Pool, hub: Any, venue: str,
                             idem_key: str | None = None) -> list[dict[str, Any]]:
     plan = await rebalance_plan(pool, hub, venue)
+    # Lay mark truoc khi giu transaction: mark_price mo connection rieng, neu goi
+    # trong luc dang giu khoa thi pool can kiet connection va cac lenh cho nhau.
+    marks: dict[str, Decimal] = {}
+    for p in plan:
+        marks[p["symbol"]], _ = await mark_price(pool, hub, venue, p["symbol"])
     done = []
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await _lock(conn)
             for i, p in enumerate(plan):
-                mark, _ = await mark_price(pool, hub, venue, p["symbol"])
+                mark = marks[p["symbol"]]
                 st = await state(conn)
                 qty = Decimal(str(p["qty"]))
                 if p["side"] == "buy":
@@ -430,7 +461,10 @@ async def rebalance_execute(pool: asyncpg.Pool, hub: Any, venue: str,
                         raise ValueError("khong du tien mat sau khi ban — huy rebalance")
                     avg = Decimal(0)
                 else:
-                    avg = st["positions"][p["symbol"]]["avg"]
+                    pos = st["positions"].get(p["symbol"])
+                    if not pos or qty > pos["qty"]:
+                        raise ValueError(f"khong du vi the {p['symbol']} — huy rebalance")
+                    avg = pos["avg"]
                 row = await _fill(conn, ts=datetime.now(timezone.utc), kind=p["side"],
                                   symbol=p["symbol"], qty=qty, mark=mark, avg=avg,
                                   source="rebalance",
@@ -442,6 +476,7 @@ async def rebalance_execute(pool: asyncpg.Pool, hub: Any, venue: str,
 async def reset(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await _lock(conn)
             await conn.execute("DELETE FROM paper_journal")
             await _fill(conn, ts=datetime.now(timezone.utc), kind="deposit", symbol=None,
                         qty=INITIAL_CAPITAL, mark=Decimal(1), avg=Decimal(0),
@@ -450,31 +485,42 @@ async def reset(pool: asyncpg.Pool) -> None:
 
 async def seed(pool: asyncpg.Pool, venue: str, days: int = 60) -> int:
     """Replay chien luoc paper qua khu tu nen 1h that; gan nhan source='seed'."""
+    if days < 1:
+        raise ValueError("days phai >= 1")
     async with pool.acquire() as conn:
-        n = await conn.fetchval("SELECT count(*) FROM paper_journal WHERE kind IN ('buy','sell')")
-        if n:
-            raise ValueError("da co lenh paper — reset truoc khi seed")
-        t0 = await conn.fetchval("""
-            SELECT max(ts) - ($1 || ' hours')::interval FROM candle
-            WHERE venue=$2 AND timeframe='1h'
-        """, str(days * 24), venue)
-        t0 = t0.replace(minute=0, second=0, microsecond=0)
-        closes: dict[str, dict[datetime, Decimal]] = {}
-        for sym in ("BTC/USDT", "ETH/USDT", "SOL/USDT"):
-            rows = await conn.fetch("""
-                SELECT ts, close FROM candle WHERE venue=$1 AND symbol=$2
-                  AND timeframe='1h' AND ts >= $3 ORDER BY ts
-            """, venue, sym, t0)
-            closes[sym] = {r["ts"]: Decimal(str(r["close"])) for r in rows}
-
-        def mark_at(sym: str, ts: datetime) -> Decimal:
-            series = closes[sym]
-            if ts in series:
-                return series[ts]
-            prior = [t for t in series if t <= ts]
-            return series[max(prior)]
-
         async with conn.transaction():
+            await _lock(conn)
+            n = await conn.fetchval("SELECT count(*) FROM paper_journal WHERE kind IN ('buy','sell')")
+            if n:
+                raise ValueError("da co lenh paper — reset truoc khi seed")
+            bounds = await conn.fetchrow("""
+                SELECT min(ts) AS first_ts, max(ts) AS last_ts FROM candle
+                WHERE venue=$1 AND timeframe='1h'
+            """, venue)
+            last_ts = bounds["last_ts"]
+            if last_ts is None:
+                raise ValueError("kho chua co nen 1h — chay ingest truoc khi seed")
+            t0 = (last_ts - timedelta(hours=days * 24)).replace(minute=0, second=0, microsecond=0)
+            # Kho ngan hon so ngay xin: replay tu nen som nhat chu khong ra ngoai kho.
+            t0 = max(t0, bounds["first_ts"].replace(minute=0, second=0, microsecond=0))
+            closes: dict[str, dict[datetime, Decimal]] = {}
+            for sym in ("BTC/USDT", "ETH/USDT", "SOL/USDT"):
+                rows = await conn.fetch("""
+                    SELECT ts, close FROM candle WHERE venue=$1 AND symbol=$2
+                      AND timeframe='1h' AND ts >= $3 ORDER BY ts
+                """, venue, sym, t0)
+                closes[sym] = {r["ts"]: Decimal(str(r["close"])) for r in rows}
+
+            def mark_at(sym: str, ts: datetime) -> Decimal:
+                series = closes[sym]
+                if ts in series:
+                    return series[ts]
+                prior = [t for t in series if t <= ts]
+                if not prior:
+                    raise ValueError(
+                        f"kho khong co nen {sym} tai/truoc {ts.isoformat()} — seed can them lich su")
+                return series[max(prior)]
+
             # Reset de lai deposit o hien tai; seed thay bang deposit cua no tai t0
             # de von khong bi nhan doi.
             await conn.execute("DELETE FROM paper_journal")
@@ -485,6 +531,8 @@ async def seed(pool: asyncpg.Pool, venue: str, days: int = 60) -> int:
 
             async def order(ts: datetime, sym: str, side: str, qty: Decimal, note: str) -> None:
                 nonlocal seq
+                if ts > last_ts:
+                    return  # chien luoc vuot kho: khong tao su kien tuong lai
                 st = await state(conn)
                 avg = st["positions"][sym]["avg"] if side == "sell" else Decimal(0)
                 seq += 1

@@ -199,6 +199,7 @@ function OrderModal({ request, onClose, entries, positions, cash, livePrices, li
   const [symbol, setSymbol] = useState("");
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [qtyStr, setQtyStr] = useState("");
+  const [pct, setPct] = useState<number | null>(null);
   const [idem, setIdem] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -207,6 +208,7 @@ function OrderModal({ request, onClose, entries, positions, cash, livePrices, li
     setSymbol(request.symbol);
     setSide(request.side);
     setQtyStr(request.qty !== undefined ? String(Number(request.qty.toFixed(8))) : "");
+    setPct(null);
     setIdem(`ui-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     setErr(null);
   }, [request]);
@@ -235,9 +237,11 @@ function OrderModal({ request, onClose, entries, positions, cash, livePrices, li
   const affordable = side === "buy" ? buyTotal <= cash + 1e-9 : qty <= maxSellQty + 1e-9;
   const valid = validQty && mark > 0 && symbol !== "" && affordable;
 
-  const setPct = (pct: number) => {
+  const applyPct = (p: number) => {
     const max = side === "buy" ? maxBuyQty : maxSellQty;
-    setQtyStr(String(Number((pct * max).toFixed(8))));
+    // lam tron xuong: tron len o chu so thap phan thu 8 se vuot cash/vi the va khoa nut dat lenh
+    setQtyStr(String(Math.floor(p * max * 1e8) / 1e8));
+    setPct(p);
   };
 
   const order = useMutation({
@@ -285,7 +289,7 @@ function OrderModal({ request, onClose, entries, positions, cash, livePrices, li
             Symbol
             <select
               value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
+              onChange={(e) => { setSymbol(e.target.value); setPct(null); }}
               className="mt-1 h-8 w-full rounded-card border border-line bg-bg px-2 text-[12px] text-ink outline-none focus:border-accent"
             >
               {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -298,7 +302,7 @@ function OrderModal({ request, onClose, entries, positions, cash, livePrices, li
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setSide(s)}
+                  onClick={() => { setSide(s); setPct(null); }}
                   aria-pressed={side === s}
                   className={
                     "h-full flex-1 rounded-card text-[12px] font-medium transition-colors " +
@@ -318,22 +322,31 @@ function OrderModal({ request, onClose, entries, positions, cash, livePrices, li
             type="text"
             inputMode="decimal"
             value={qtyStr}
-            onChange={(e) => setQtyStr(e.target.value)}
+            onChange={(e) => { setQtyStr(e.target.value); setPct(null); }}
             placeholder="0.00"
             className="tnum mt-1 h-9 w-full rounded-card border border-line bg-bg px-2 text-[14px] text-ink outline-none focus:border-accent"
           />
         </label>
-        <div className="flex items-center gap-1">
-          {[0.25, 0.5, 0.75, 1].map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPct(p)}
-              className="h-6 flex-1 rounded-card border border-line text-[11px] text-dim hover:bg-hover hover:text-ink"
-            >
-              {p * 100}%
-            </button>
-          ))}
+        <div>
+          <p className="mb-1 text-[11px] text-faint">
+            {side === "buy" ? "Đặt nhanh theo % tiền mặt khả dụng (đã gồm phí)" : "Đặt nhanh theo % vị thế đang giữ"}
+          </p>
+          <div className="flex items-center gap-1" role="group" aria-label="Đặt nhanh khối lượng">
+            {[0.25, 0.5, 0.75, 1].map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => applyPct(p)}
+                aria-pressed={pct === p}
+                className={
+                  "h-6 flex-1 rounded-card border text-[11px] transition-colors " +
+                  (pct === p ? "border-accent/60 bg-hover text-ink" : "border-line text-dim hover:bg-hover hover:text-ink")
+                }
+              >
+                {p * 100}%
+              </button>
+            ))}
+          </div>
         </div>
         <p className="text-[11px] text-faint">
           {side === "buy"
