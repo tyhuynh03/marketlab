@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from marketlab_web import db, ingest, live, metrics, portfolio
+from marketlab_web import backtest, db, ingest, live, metrics, portfolio
 from marketlab_web.config import get_settings
 
 ROLLUP_VIEWS = {"4h": "candle_4h", "1d": "candle_1d"}
@@ -160,6 +160,40 @@ async def summary(
     result = metrics.summary(payload["candles"], timeframe, metrics.periods_for(timeframe, venue))
     result["symbol"] = symbol
     result["timeframe"] = timeframe
+    return result
+
+
+@app.get("/api/backtest")
+async def backtest_endpoint(
+    symbol: str = Query(...),
+    timeframe: str = Query("1h"),
+    limit: int = Query(500, ge=2, le=5000),
+    venue: str | None = Query(None),
+    strategy: str = Query("sma_cross", pattern="^(sma_cross|buy_hold)$"),
+    fast: int = Query(10, ge=2, le=200),
+    slow: int = Query(30, ge=3, le=400),
+    oos: float = Query(0.3, gt=0.0, lt=1.0),
+) -> dict[str, Any]:
+    """Backtest lat cat 1 theo docs/strategy-contract.md. Chi doc nen da dong trong kho;
+    khop open nen i+1, phi/truot dung so paper. Benchmark buy-and-hold cung luat (R9).
+    Bao cao luon kem cua so OOS (holdout train/test) de chong overfit (Phase 2)."""
+    settings: Any = app.state.settings
+    venue = venue or settings.venue
+    try:
+        sym = db.normalize_ticker(symbol) if venue == "yahoo" else db.normalize_symbol(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if strategy == "sma_cross" and fast >= slow:
+        raise HTTPException(status_code=422, detail="fast phai < slow")
+    payload = await candles(symbol=sym, timeframe=timeframe, limit=limit, venue=venue)
+    rows = payload["candles"]
+    strat = backtest.SmaCross(fast, slow) if strategy == "sma_cross" else backtest.BuyHold()
+    result = backtest.run(rows, strat, venue=venue, timeframe=timeframe)
+    bench = backtest.run(rows, backtest.BuyHold(), venue=venue, timeframe=timeframe)
+    result["symbol"] = sym
+    result["benchmark"] = {"strategy": "buy_hold", "metrics": bench["metrics"],
+                           "equity": bench["equity"], "final": bench["final"]}
+    result["holdout"] = backtest.run_oos(rows, strat, oos=oos, venue=venue, timeframe=timeframe)
     return result
 
 

@@ -40,8 +40,8 @@ export default function TopBar({
   settings: Settings;
   ingesting: boolean;
   fullscreen: boolean;
-  view: "overview" | "terminal" | "portfolio";
-  onView: (v: "overview" | "terminal" | "portfolio") => void;
+  view: "overview" | "terminal" | "portfolio" | "backtest";
+  onView: (v: "overview" | "terminal" | "portfolio" | "backtest") => void;
   onTimeframe: (tf: Timeframe) => void;
   onChartType: (t: ChartType) => void;
   onOpenSearch: () => void;
@@ -104,6 +104,18 @@ export default function TopBar({
         >
           <Icon name="wallet" size={14} />
           Tài sản
+        </button>
+        <button
+          type="button"
+          onClick={() => onView("backtest")}
+          aria-pressed={view === "backtest"}
+          className={
+            "flex h-7 items-center gap-1.5 rounded-card px-2 text-[12px] transition-colors " +
+            (view === "backtest" ? "bg-hover font-semibold text-accent" : "text-dim hover:bg-hover hover:text-ink")
+          }
+        >
+          <Icon name="fx" size={14} />
+          Backtest
         </button>
       </div>
 
