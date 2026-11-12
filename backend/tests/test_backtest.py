@@ -13,6 +13,8 @@ import pytest
 from marketlab_web import backtest, metrics
 from marketlab_web.portfolio import FEE_RATE, INITIAL_CAPITAL, Q8, SLIPPAGE
 
+import pandas as pd
+
 T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
 HOUR = timedelta(hours=1)
 CAP = Decimal(INITIAL_CAPITAL)
@@ -243,3 +245,79 @@ def test_sma_cross_warmup_and_direction():
 def test_run_rejects_short_series():
     with pytest.raises(ValueError):
         backtest.run([mkbar(0, 1, 1)], backtest.BuyHold())
+
+
+# --- OOS holdout (Phase 2): chia train/test theo thoi gian, do doc lap ---
+
+def test_oos_split_is_chronological_disjoint_and_covers_all_bars():
+    candles = [mkbar(i, 100 + (i % 7) * 2, 101 + (i % 5) * 3) for i in range(50)]
+    h = backtest.run_oos(candles, backtest.SmaCross(3, 8), oos=0.3)
+    assert h["train_bars"] + h["test_bars"] == len(candles)
+    assert h["train_bars"] == 35 and h["test_bars"] == 15
+    # boundary = nen dau cua test; train ket thuc ngay truoc do, khong overlap
+    assert h["boundary_ts"] == candles[35]["ts"].isoformat()
+    assert h["train_start_ts"] == candles[0]["ts"].isoformat()
+    assert h["test_end_ts"] == candles[-1]["ts"].isoformat()
+    assert h["oos_fraction"] == 0.3
+
+
+def test_oos_window_metrics_match_sliced_full_run():
+    candles = [mkbar(i, 100 + (i % 11) * 2, 101 + (i % 9) * 3) for i in range(60)]
+    strat = backtest.SmaCross(4, 10)
+    h = backtest.run_oos(candles, strat, oos=0.25)
+    n_train = h["train_bars"]
+    full = backtest.run(candles, strat)
+    bench = backtest.run(candles, backtest.BuyHold())
+    ppy = full["ppy"]
+
+    def wm(pts):
+        eq = pd.Series([p["equity"] for p in pts], dtype="float64")
+        return {"total_return": metrics.total_return(eq),
+                "annualized_return": metrics.annualized_return(eq, ppy),
+                "max_drawdown": metrics.max_drawdown(eq),
+                "volatility": metrics.volatility(eq, ppy),
+                "sharpe": metrics.sharpe(eq, ppy),
+                "sortino": metrics.sortino(eq, ppy),
+                "calmar": metrics.calmar(eq, ppy)}
+
+    # in-sample = eq[:n_train]; out-of-sample neo tai close nen train cuoi (n_train-1)
+    assert h["in_sample"]["metrics"] == wm(full["equity"][:n_train])
+    assert h["out_of_sample"]["metrics"] == wm(full["equity"][n_train - 1:])
+    assert h["in_sample"]["benchmark_metrics"] == wm(bench["equity"][:n_train])
+    assert h["out_of_sample"]["benchmark_metrics"] == wm(bench["equity"][n_train - 1:])
+    assert h["in_sample"]["observations"] == n_train
+    assert h["out_of_sample"]["observations"] == h["test_bars"]
+
+
+def test_oos_trades_in_test_even_when_test_shorter_than_warmup():
+    # Chuoi tang deu: SMA(5,30) chi warmup xong o nen 29. Test = 25 nen < slow=30.
+    # Chay lai tung doan se phang suot (0% gia tao); lien tuc thi van khop trong test.
+    candles = [mkbar(i, 100 + i, 101 + i) for i in range(50)]
+    h = backtest.run_oos(candles, backtest.SmaCross(5, 30), oos=0.5)
+    assert h["test_bars"] == 25 and h["test_bars"] < 30
+    assert h["out_of_sample"]["n_fills"] > 0
+    assert h["out_of_sample"]["metrics"]["total_return"] != 0.0
+
+
+def test_oos_clamps_each_window_to_at_least_two_bars():
+    candles = [mkbar(i, 100 + i, 101 + i) for i in range(6)]
+    for frac in (0.01, 0.99):
+        h = backtest.run_oos(candles, backtest.BuyHold(), oos=frac)
+        assert h["train_bars"] >= 2 and h["test_bars"] >= 2
+        assert h["train_bars"] + h["test_bars"] == 6
+
+
+def test_oos_rejects_bad_fraction_and_short_series():
+    candles = [mkbar(i, 100, 101) for i in range(10)]
+    for frac in (0.0, 1.0, -0.2, 1.5):
+        with pytest.raises(ValueError):
+            backtest.run_oos(candles, backtest.BuyHold(), oos=frac)
+    with pytest.raises(ValueError):
+        backtest.run_oos([mkbar(i, 100, 101) for i in range(3)], backtest.BuyHold())
+
+
+def test_oos_is_deterministic_and_pure():
+    candles = [mkbar(i, 100 + (i % 6), 101 + (i % 4)) for i in range(40)]
+    a = backtest.run_oos(candles, backtest.SmaCross(3, 7), oos=0.3)
+    b = backtest.run_oos(candles, backtest.SmaCross(3, 7), oos=0.3)
+    assert a == b

@@ -206,3 +206,75 @@ def run(candles: Sequence[Bar], strategy: Strategy, *,
         "final": {"cash": float(cash), "qty": float(qty), "equity": float(final_equity),
                   "position_weight": float(qty * last_close / final_equity) if final_equity > 0 else 0.0},
     }
+
+
+def _window_metrics(points: Sequence[dict[str, Any]], ppy: float) -> dict[str, float]:
+    """Do chi so tren mot cua so con cua equity curve (dung cung oracle metrics)."""
+    eq = pd.Series([p["equity"] for p in points], dtype="float64")
+    return {
+        "total_return": metrics.total_return(eq),
+        "annualized_return": metrics.annualized_return(eq, ppy),
+        "max_drawdown": metrics.max_drawdown(eq),
+        "volatility": metrics.volatility(eq, ppy),
+        "sharpe": metrics.sharpe(eq, ppy),
+        "sortino": metrics.sortino(eq, ppy),
+        "calmar": metrics.calmar(eq, ppy),
+    }
+
+
+def run_oos(candles: Sequence[Bar], strategy: Strategy, *, oos: float = 0.3,
+            initial_capital: Decimal = INITIAL_CAPITAL,
+            venue: str = "binance", timeframe: str = "1h") -> dict[str, Any]:
+    """Holdout chong overfit (Phase 2): chia chuoi theo THOI GIAN, khong tron.
+
+    Chay strategy + benchmark BuyHold MOT LAN tren toan chuoi (vi the lien tuc,
+    khong reset o ranh gioi), roi do chi so tren hai cua so con:
+      * in-sample     = (1-oos) nen dau,
+      * out-of-sample = oos nen cuoi, neo von tai equity close nen train cuoi.
+
+    Vi sao lien tuc thay vi chay lai tung doan: strategy khong phai warmup lai
+    trong cua so test. Khi test ngan hon `slow` (kho nen it), chay lai tung doan
+    se nam phang suot -> OOS 0% gia tao. Lien tuc cho so lieu that ngay ca khi
+    kho nen ngan. Tham so co dinh tu train; OOS do tren du lieu chua tung tune.
+
+    Khong cham DB/mang (C4). n_fills dem lenh co signal trong moi cua so de
+    phan biet "phang do tin hieu" voi "khong giao dich".
+    """
+    n = len(candles)
+    if n < 4:
+        raise ValueError("can it nhat 4 nen de chia train/test")
+    if not (0.0 < oos < 1.0):
+        raise ValueError("oos phai trong khoang (0, 1)")
+    n_test = max(2, min(n - 2, int(round(n * oos))))
+    n_train = n - n_test
+    ppy = metrics.periods_for(timeframe, venue)
+    s = run(candles, strategy, initial_capital=initial_capital, venue=venue, timeframe=timeframe)
+    b = run(candles, BuyHold(), initial_capital=initial_capital, venue=venue, timeframe=timeframe)
+    boundary_ts = candles[n_train]["ts"].isoformat()
+
+    def split(full: dict[str, Any]) -> dict[str, Any]:
+        eq = full["equity"]
+        fills = full["fills"]
+        return {
+            "in_sample": {"metrics": _window_metrics(eq[:n_train], ppy),
+                          "n_fills": sum(1 for f in fills if f["signal_ts"] < boundary_ts)},
+            # neo tai close nen train cuoi (n_train-1) de total_return cua test co goc
+            "out_of_sample": {"metrics": _window_metrics(eq[n_train - 1:], ppy),
+                              "n_fills": sum(1 for f in fills if f["signal_ts"] >= boundary_ts)},
+        }
+
+    sw, bw = split(s), split(b)
+    return {
+        "oos_fraction": oos,
+        "train_bars": n_train,
+        "test_bars": n_test,
+        "boundary_ts": boundary_ts,
+        "train_start_ts": candles[0]["ts"].isoformat(),
+        "test_end_ts": candles[-1]["ts"].isoformat(),
+        "in_sample": {"observations": n_train, "metrics": sw["in_sample"]["metrics"],
+                      "benchmark_metrics": bw["in_sample"]["metrics"],
+                      "n_fills": sw["in_sample"]["n_fills"]},
+        "out_of_sample": {"observations": n_test, "metrics": sw["out_of_sample"]["metrics"],
+                          "benchmark_metrics": bw["out_of_sample"]["metrics"],
+                          "n_fills": sw["out_of_sample"]["n_fills"]},
+    }

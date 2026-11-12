@@ -172,9 +172,11 @@ async def backtest_endpoint(
     strategy: str = Query("sma_cross", pattern="^(sma_cross|buy_hold)$"),
     fast: int = Query(10, ge=2, le=200),
     slow: int = Query(30, ge=3, le=400),
+    oos: float = Query(0.3, gt=0.0, lt=1.0),
 ) -> dict[str, Any]:
     """Backtest lat cat 1 theo docs/strategy-contract.md. Chi doc nen da dong trong kho;
-    khop open nen i+1, phi/truot dung so paper. Benchmark buy-and-hold cung luat (R9)."""
+    khop open nen i+1, phi/truot dung so paper. Benchmark buy-and-hold cung luat (R9).
+    Bao cao luon kem cua so OOS (holdout train/test) de chong overfit (Phase 2)."""
     settings: Any = app.state.settings
     venue = venue or settings.venue
     try:
@@ -191,6 +193,7 @@ async def backtest_endpoint(
     result["symbol"] = sym
     result["benchmark"] = {"strategy": "buy_hold", "metrics": bench["metrics"],
                            "equity": bench["equity"], "final": bench["final"]}
+    result["holdout"] = backtest.run_oos(rows, strat, oos=oos, venue=venue, timeframe=timeframe)
     return result
 
 

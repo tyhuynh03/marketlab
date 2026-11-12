@@ -223,6 +223,7 @@ const SHORTCUTS: { keys: string; text: string }[] = [
   { keys: "O", text: "Màn Tổng quan" },
   { keys: "C", text: "Màn Terminal (chart)" },
   { keys: "P", text: "Màn Tài sản (portfolio)" },
+  { keys: "B", text: "Màn Backtest" },
   { keys: "Ctrl + K", text: "Mở ô tìm symbol" },
   { keys: "/", text: "Mở ô tìm symbol" },
   { keys: "1 / 2 / 3", text: "Khung 1h / 4h / 1d" },

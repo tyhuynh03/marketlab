@@ -329,3 +329,88 @@ export const resetPortfolio = () => send<{ reset: string }>("/api/portfolio/rese
 
 export const seedPortfolio = (days = 60) =>
   send<{ seeded_orders: number }>("/api/portfolio/seed", "POST", { days });
+
+/* ---------- Backtest (engine thuần, hợp đồng docs/strategy-contract.md) ---------- */
+
+export type BacktestStrategy = "sma_cross" | "buy_hold";
+
+export type BacktestMetrics = {
+  total_return: number;
+  annualized_return: number;
+  max_drawdown: number;
+  volatility: number;
+  sharpe: number;
+  sortino: number;
+  calmar: number;
+};
+
+export type BacktestEquityPoint = { ts: string; equity: number; weight: number; dd: number };
+
+export type BacktestFill = {
+  signal_ts: string;
+  fill_ts: string;
+  side: "buy" | "sell";
+  raw_open: number;
+  exec_price: number;
+  qty: number;
+  fee: number;
+  notional: number;
+};
+
+export type BacktestFinal = { cash: number; qty: number; equity: number; position_weight: number };
+
+/** Một cửa sổ holdout: chỉ số chiến lược + benchmark, đếm lệnh khớp trong cửa sổ. */
+export type BacktestWindow = {
+  observations: number;
+  metrics: BacktestMetrics;
+  benchmark_metrics: BacktestMetrics;
+  n_fills: number;
+};
+
+export type BacktestHoldout = {
+  oos_fraction: number;
+  train_bars: number;
+  test_bars: number;
+  boundary_ts: string;
+  train_start_ts: string;
+  test_end_ts: string;
+  in_sample: BacktestWindow;
+  out_of_sample: BacktestWindow;
+};
+
+export type BacktestResponse = {
+  strategy: string;
+  symbol: string;
+  venue: string;
+  timeframe: string;
+  ppy: number;
+  initial_capital: number;
+  observations: number;
+  equity: BacktestEquityPoint[];
+  metrics: BacktestMetrics;
+  fills: BacktestFill[];
+  dropped_signals: { ts: string; weight: number; reason: string }[];
+  clamped_weights: { ts: string; raw_weight: number; weight: number }[];
+  final: BacktestFinal;
+  benchmark: { strategy: string; metrics: BacktestMetrics; equity: BacktestEquityPoint[]; final: BacktestFinal };
+  holdout: BacktestHoldout;
+};
+
+export type BacktestParams = {
+  symbol: string;
+  timeframe: string;
+  limit: number;
+  venue: string;
+  strategy: BacktestStrategy;
+  fast: number;
+  slow: number;
+  oos: number;
+};
+
+export const fetchBacktest = (p: BacktestParams, signal?: AbortSignal) =>
+  get<BacktestResponse>(
+    `/api/backtest?symbol=${encodeURIComponent(p.symbol)}&timeframe=${encodeURIComponent(p.timeframe)}` +
+    `&limit=${p.limit}&venue=${encodeURIComponent(p.venue)}&strategy=${p.strategy}` +
+    `&fast=${p.fast}&slow=${p.slow}&oos=${p.oos}`,
+    signal,
+  );

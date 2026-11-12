@@ -19,6 +19,7 @@ import { IndicatorsDialog, SettingsDialog, ShortcutsDialog } from "./components/
 import DrawingRail from "./components/DrawingRail";
 import Overview from "./components/Overview";
 import Portfolio from "./components/Portfolio";
+import Backtest from "./components/Backtest";
 import RightPanel from "./components/RightPanel";
 import StatusBar from "./components/StatusBar";
 import SymbolSearch from "./components/SymbolSearch";
@@ -60,7 +61,7 @@ export default function App() {
   const [limit, setLimit] = useState(loadLimit);
   const [fullscreen, setFullscreen] = useState(false);
   const [rightDrawer, setRightDrawer] = useState(false);
-  const [view, setView] = useState<"overview" | "terminal" | "portfolio">("overview");
+  const [view, setView] = useState<"overview" | "terminal" | "portfolio" | "backtest">("overview");
 
   const [tool, setTool] = useState<ToolId>("cursor");
   const [drawColor, setDrawColor] = useState("#2962ff");
@@ -350,7 +351,7 @@ export default function App() {
     if (tf) setTimeframe(tf);
     setView("terminal");
   }, []);
-  const onView = useCallback((v: "overview" | "terminal" | "portfolio") => setView(v), []);
+  const onView = useCallback((v: "overview" | "terminal" | "portfolio" | "backtest") => setView(v), []);
   const toggleRight = useCallback(() => {
     if (wide) update("rightPanel", !settings.rightPanel);
     else setRightDrawer((v) => !v);
@@ -382,6 +383,8 @@ export default function App() {
         setView("terminal");
       } else if (key === "p") {
         setView("portfolio");
+      } else if (key === "b") {
+        setView("backtest");
       } else if (e.key === "/") {
         e.preventDefault();
         setSearchOpen(true);
@@ -491,6 +494,13 @@ export default function App() {
             onToggleLive={() => update("live", !settings.live)}
             liveEnabled={settings.live}
             onOpenSymbol={onOpenSymbol}
+          />
+        ) : view === "backtest" ? (
+          <Backtest
+            entries={entries}
+            palette={palette}
+            onToast={pushToast}
+            onLog={pushLog}
           />
         ) : (
           <>
