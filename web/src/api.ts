@@ -176,7 +176,7 @@ export function fmtTime(iso: string | null | undefined): string {
 /** Khớp đúng backend portfolio.py: phí taker 0.1%, trượt giá 0.05% chiều bất lợi. */
 export const PAPER_FEE_RATE = 0.001;
 export const PAPER_SLIPPAGE = 0.0005;
-export const PAPER_CAPITAL = 100000;
+export const PAPER_CAPITAL = 1000;
 
 export type Benchmark = "btc" | "8020";
 

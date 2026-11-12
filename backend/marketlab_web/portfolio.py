@@ -21,7 +21,7 @@ from marketlab_web import metrics
 
 FEE_RATE = Decimal("0.001")
 SLIPPAGE = Decimal("0.0005")
-INITIAL_CAPITAL = Decimal("100000")
+INITIAL_CAPITAL = Decimal("1000")
 Q8 = Decimal("0.00000001")
 HOUR = timedelta(hours=1)
 PERIODS_PER_YEAR = metrics.PERIODS_PER_YEAR["1h"]
@@ -540,15 +540,16 @@ async def seed(pool: asyncpg.Pool, venue: str, days: int = 60) -> int:
                             mark=mark_at(sym, ts), avg=avg, source="seed",
                             idem_key=f"seed:{seq}", note=note)
 
-            for sym, notional in (("BTC/USDT", 40000), ("ETH/USDT", 30000), ("SOL/USDT", 10000)):
+            cap = INITIAL_CAPITAL
+            for sym, frac in (("BTC/USDT", Decimal("0.40")), ("ETH/USDT", Decimal("0.30")), ("SOL/USDT", Decimal("0.10"))):
                 m = mark_at(sym, t0)
-                await order(t0, sym, "buy", q8(Decimal(notional) / (m * (1 + SLIPPAGE))), "Mo vi the core (seed)")
+                await order(t0, sym, "buy", q8(cap * frac / (m * (1 + SLIPPAGE))), "Mo vi the core (seed)")
             for week in range(1, 8):
                 ts = t0 + week * 7 * 24 * HOUR
                 st = await state(conn)
-                if st["cash"] > 6000:
+                if st["cash"] > cap * Decimal("0.06"):
                     m = mark_at("BTC/USDT", ts)
-                    await order(ts, "BTC/USDT", "buy", q8(Decimal(2000) / (m * (1 + SLIPPAGE))), "DCA hang tuan (seed)")
+                    await order(ts, "BTC/USDT", "buy", q8(cap * Decimal("0.02") / (m * (1 + SLIPPAGE))), "DCA hang tuan (seed)")
             ts = t0 + 20 * 24 * HOUR
             st = await state(conn)
             await order(ts, "BTC/USDT", "sell", q8(st["positions"]["BTC/USDT"]["qty"] * Decimal("0.2")), "Chot 20% BTC (seed)")
@@ -557,5 +558,5 @@ async def seed(pool: asyncpg.Pool, venue: str, days: int = 60) -> int:
             await order(ts, "ETH/USDT", "sell", q8(st["positions"]["ETH/USDT"]["qty"] * Decimal("0.3")), "Chot 30% ETH (seed)")
             ts = t0 + 50 * 24 * HOUR
             m = mark_at("SOL/USDT", ts)
-            await order(ts, "SOL/USDT", "buy", q8(Decimal(3000) / (m * (1 + SLIPPAGE))), "Mua them SOL (seed)")
+            await order(ts, "SOL/USDT", "buy", q8(cap * Decimal("0.03") / (m * (1 + SLIPPAGE))), "Mua them SOL (seed)")
     return seq
