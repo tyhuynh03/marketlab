@@ -3,7 +3,7 @@ import { makeIndicator, type Indicator } from "./indicators";
 import { applyTheme, type Theme } from "./theme";
 
 export type ChartType = "candles" | "hollow" | "heikin" | "bars" | "line" | "area";
-export type BottomTab = "metrics" | "data" | "log" | "about";
+export type BottomTab = "metrics" | "data" | "agent" | "log" | "about";
 
 export const CHART_TYPES: { id: ChartType; label: string; hint: string }[] = [
   { id: "candles", label: "Nến Nhật", hint: "OHLC đặc" },

@@ -116,3 +116,35 @@ def summary(candles: Sequence[dict[str, Any]], timeframe: str) -> dict[str, Any]
         "sortino": sortino(series, ppy),
         "calmar": calmar(series, ppy),
     }
+
+
+# Chi bao dang chuoi cho tool get_indicator_series. Moi cai dung lai dinh nghia
+# trong module nay tren cua so truot, khong them dinh nghia moi.
+INDICATORS = ("sma", "ema", "volatility", "drawdown")
+
+
+def series(candles: Sequence[dict[str, Any]], timeframe: str, indicator: str,
+           period: int) -> list[dict[str, Any]]:
+    """Chuoi chi bao tren close; tra [{'ts', 'value'}] bo cac diem chua du cua so."""
+    if indicator not in INDICATORS:
+        raise ValueError(f"indicator {indicator!r} khong ho tro ({', '.join(INDICATORS)})")
+    if not 2 <= int(period) <= 200:
+        raise ValueError("period phai trong khoang 2..200")
+    ppy = PERIODS_PER_YEAR.get(timeframe)
+    if ppy is None:
+        raise ValueError(f"khong ro periods_per_year cho timeframe {timeframe!r}")
+    close = closes(candles)
+    if indicator == "sma":
+        values = close.rolling(int(period)).mean()
+    elif indicator == "ema":
+        values = close.ewm(span=int(period), adjust=False).mean()
+    elif indicator == "volatility":
+        values = log_returns(close).rolling(int(period)).std(ddof=1) * math.sqrt(ppy)
+    else:  # drawdown
+        values = close / close.rolling(int(period)).max() - 1.0
+    out: list[dict[str, Any]] = []
+    for idx, value in values.items():
+        if value is None or value != value:  # NaN
+            continue
+        out.append({"ts": candles[int(idx)]["ts"], "value": float(value)})
+    return out

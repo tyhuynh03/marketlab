@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fmtCompact, fmtNum, fmtPct, fmtPrice, fmtTime, type Candle, type Summary } from "../api";
+import {
+  TIMEFRAMES,
+  fmtCompact,
+  fmtNum,
+  fmtPct,
+  fmtPrice,
+  fmtTime,
+  type Candle,
+  type Summary,
+  type Timeframe,
+  type WatchEntry,
+} from "../api";
+import type { AgentRunState } from "../agentRun";
 import { drawdownSeries, equitySeries } from "../indicators";
 import type { BottomTab } from "../store";
 import { Empty, Icon, ToolButton } from "./ui";
@@ -9,6 +21,7 @@ export type LogEntry = { id: number; at: string; text: string; tone: "info" | "o
 const TABS: { id: BottomTab; label: string; icon: string }[] = [
   { id: "metrics", label: "Chỉ số", icon: "bolt" },
   { id: "data", label: "Dữ liệu nến", icon: "table" },
+  { id: "agent", label: "Agent", icon: "spark" },
   { id: "log", label: "Nhật ký", icon: "list" },
   { id: "about", label: "Nguồn dữ liệu", icon: "database" },
 ];
@@ -54,36 +67,53 @@ export default function BottomPanel({
   candles,
   summary,
   log,
+  entries,
   symbol,
   timeframe,
   venue,
   loading,
   ingesting,
   lastIngest,
+  agent,
   onTab,
   onHeight,
   onCollapse,
   onIngest,
+  onSelectSymbol,
+  onTimeframe,
+  onAnalyze,
+  onCancelAnalysis,
 }: {
   tab: BottomTab;
   height: number;
   candles: Candle[];
   summary: Summary | undefined;
   log: LogEntry[];
+  entries: WatchEntry[];
   symbol: string;
-  timeframe: string;
+  timeframe: Timeframe;
   venue: string;
   loading: boolean;
   ingesting: boolean;
   lastIngest: string | null;
+  agent: AgentRunState;
   onTab: (tab: BottomTab) => void;
   onHeight: (height: number) => void;
   onCollapse: () => void;
   onIngest: () => void;
+  onSelectSymbol: (symbol: string) => void;
+  onTimeframe: (tf: Timeframe) => void;
+  onAnalyze: () => void;
+  onCancelAnalysis: () => void;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "ts", desc: true });
   const [direction, setDirection] = useState<"all" | "up" | "down">("all");
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  const symbolOptions = useMemo(() => {
+    const list = entries.map((e) => e.symbol);
+    return list.includes(symbol) ? list : [symbol, ...list];
+  }, [entries, symbol]);
 
   useEffect(() => {
     const move = (e: MouseEvent) => {
@@ -271,6 +301,139 @@ export default function BottomPanel({
               })}
             </tbody>
           </table>
+        )}
+
+        {tab === "agent" && (
+          <div className="space-y-2 p-2.5">
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-wide text-faint">
+                Cặp
+                <select
+                  value={symbol}
+                  onChange={(e) => onSelectSymbol(e.target.value)}
+                  className="h-6 rounded-card border border-line bg-bg px-1.5 text-[12px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
+                >
+                  {symbolOptions.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-wide text-faint">
+                Khung
+                <select
+                  value={timeframe}
+                  onChange={(e) => onTimeframe(e.target.value as Timeframe)}
+                  className="h-6 rounded-card border border-line bg-bg px-1.5 text-[12px] font-normal normal-case tracking-normal text-ink outline-none focus:border-accent"
+                >
+                  {TIMEFRAMES.map((tf) => (
+                    <option key={tf} value={tf}>{tf}</option>
+                  ))}
+                </select>
+              </label>
+              {agent.runId !== null && !agent.finished ? (
+                <button
+                  type="button"
+                  onClick={onCancelAnalysis}
+                  className="h-6 rounded-card border border-line px-2.5 text-[12px] transition-colors hover:bg-hover"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Icon name="close" size={12} />
+                    Hủy
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onAnalyze}
+                  disabled={agent.status === "starting"}
+                  className="h-6 rounded-card bg-accent px-2.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Icon
+                      name="spark"
+                      size={13}
+                      className={agent.status === "starting" || agent.status === "running" ? "ml-pulse" : ""}
+                    />
+                    {agent.status === "starting" ? "Đang tạo run…" : "Phân tích"}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            <p className="text-[10px] leading-relaxed text-faint">
+              Agent đọc dữ liệu qua 4 tool chỉ đọc (watchlist, summary, nến, chỉ báo), tối đa 6 bước
+              rồi trả lời trên phần bằng chứng đã nén. Khóa LLM không rời khỏi server và agent không đặt lệnh.
+            </p>
+
+            {agent.trace.length > 0 && (
+              <div className="rounded-card border border-line bg-bg">
+                <p className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[10px] uppercase tracking-wide text-faint">
+                  Tiến trình
+                  <span className="tnum normal-case">{agent.trace.length} sự kiện</span>
+                </p>
+                <ul className="ml-thin-scroll max-h-[132px] divide-y divide-line/60 overflow-auto">
+                  {agent.trace.map((entry) => (
+                    <li key={`${entry.kind}-${entry.seq}`} className="flex items-baseline gap-2 px-3 py-1 text-[11px]">
+                      <span className="tnum w-7 shrink-0 text-faint">B{entry.step}</span>
+                      <Icon
+                        name={entry.kind === "step" ? "spark" : "database"}
+                        size={12}
+                        className="shrink-0 self-center text-dim"
+                      />
+                      {entry.kind === "step" ? (
+                        <>
+                          <span className="min-w-0 flex-1 truncate">
+                            {entry.tools.length > 0 ? entry.tools.join(", ") : "chốt câu trả lời"}
+                          </span>
+                          <span className="tnum shrink-0 text-[10px] text-faint">
+                            {entry.tokens} token · {(entry.latencyMs / 1000).toFixed(1)}s
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="shrink-0 text-dim">{entry.tool}</span>
+                          <span className="tnum min-w-0 flex-1 truncate text-faint">{entry.detail}</span>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {agent.answer ? (
+              <div className="space-y-2 rounded-card border border-line bg-bg px-3 py-2">
+                <p className="tnum flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-faint">
+                  <span className="uppercase tracking-wide text-dim">{symbol} · {timeframe}</span>
+                  <span>{agent.meta?.modelUsed}</span>
+                  <span>{agent.meta?.tokensIn} → {agent.meta?.tokensOut} token</span>
+                  <span>{agent.meta?.steps} bước</span>
+                  <span>{((agent.meta?.elapsedMs ?? 0) / 1000).toFixed(1)}s</span>
+                  {agent.runId !== null && <span>run #{agent.runId}</span>}
+                </p>
+                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-ink">{agent.answer.text}</p>
+                <p className="text-[10px] text-faint">
+                  Tổng hợp từ dữ liệu giá/khối lượng nến đã đóng, không phải lời khuyên đầu tư.
+                </p>
+              </div>
+            ) : agent.error ? (
+              <Empty icon="alert" title="Không phân tích được" hint={agent.error} />
+            ) : agent.status === "starting" || agent.status === "running" ? (
+              <Empty
+                icon="spark"
+                title={agent.status === "starting" ? "Đang tạo run…" : "Agent đang chạy…"}
+                hint="Từng bước tool hiện ở trên; câu trả lời cuối chỉ xuất hiện khi run xong."
+              />
+            ) : agent.status === "cancelled" ? (
+              <Empty icon="info" title="Đã hủy run" hint="Không có câu trả lời cuối cho lượt này." />
+            ) : (
+              <Empty
+                icon="spark"
+                title="Chưa có phân tích"
+                hint="Chọn cặp và khung thời gian rồi bấm Phân tích. Agent chỉ đọc nến đã đóng trong kho, không dùng tin tức."
+              />
+            )}
+          </div>
         )}
 
         {tab === "log" && (

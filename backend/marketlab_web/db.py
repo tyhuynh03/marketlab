@@ -1,6 +1,7 @@
 """marketlab_web.db — asyncpg pool + truy van candle."""
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -17,7 +18,8 @@ def normalize_symbol(raw: str, quote: str = "USDT") -> str:
     if "/" not in symbol:
         symbol = f"{symbol}/{quote}"
     if not SYMBOL_RE.match(symbol):
-        raise ValueError(f"symbol {raw!r} khong hop le (can dang BASE/QUOTE, vi du BTC/USDT)")
+        raise ValueError(
+            f"symbol {raw!r} không hợp lệ (cần dạng BASE/QUOTE, ví dụ BTC/USDT)")
     return symbol
 
 UPSERT_SQL = """
@@ -40,6 +42,7 @@ ORDER BY ts ASC
 """
 
 ROLLUP_MVIEWS = ("candle_4h", "candle_1d")
+ROLLUP_VIEWS = {"4h": "candle_4h", "1d": "candle_1d"}
 
 
 async def create_pool(dsn: str) -> asyncpg.Pool:
@@ -154,6 +157,74 @@ async def remove_watchlist(pool: asyncpg.Pool, venue: str, symbol: str,
 
 def _f(value: Any) -> float | None:
     return None if value is None else float(value)
+
+
+# ---------- agent runs (migration 002_agent.sql) ----------
+
+async def create_agent_run(pool: asyncpg.Pool, symbol: str, timeframe: str,
+                           model_tool: str, model_answer: str) -> int:
+    async with pool.acquire() as conn:
+        return int(await conn.fetchval("""
+            INSERT INTO agent_run (symbol, timeframe, status, model_tool, model_answer)
+            VALUES ($1, $2, 'running', $3, $4)
+            RETURNING id
+        """, symbol, timeframe, model_tool, model_answer))
+
+
+async def finish_agent_run(pool: asyncpg.Pool, run_id: int, status: str,
+                           model_answer: str, tokens_in: int, tokens_out: int,
+                           error: str | None) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE agent_run
+               SET status = $2, model_answer = $3, tokens_in = $4, tokens_out = $5,
+                   error = $6, finished_at = now()
+             WHERE id = $1
+        """, run_id, status, model_answer, tokens_in, tokens_out, error)
+
+
+async def insert_agent_step(pool: asyncpg.Pool, run_id: int, step_idx: int, kind: str,
+                            tool_name: str | None, args_json: str, result_json: str,
+                            tokens: int, latency_ms: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO agent_step (run_id, step_idx, kind, tool_name, args_json,
+                                    result_json, tokens, latency_ms)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
+        """, run_id, step_idx, kind, tool_name, args_json, result_json, tokens, latency_ms)
+
+
+async def fetch_agent_run(pool: asyncpg.Pool, run_id: int) -> dict[str, Any] | None:
+    """Trang thai + ket qua cho reconnect: run row + cac buoc da ghi."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT id, symbol, timeframe, status, model_tool, model_answer,
+                   tokens_in, tokens_out, error, created_at, finished_at
+              FROM agent_run WHERE id = $1
+        """, run_id)
+        if row is None:
+            return None
+        steps = await conn.fetch("""
+            SELECT step_idx, kind, tool_name, args_json, result_json, tokens,
+                   latency_ms, created_at
+              FROM agent_step WHERE run_id = $1 ORDER BY step_idx, id
+        """, run_id)
+    out = dict(row)
+    out["run_id"] = out.pop("id")
+    out["steps_detail"] = [dict(step) for step in steps]
+    # snapshot() cua run dang song cung dung ten "steps" la so buoc, khong phai danh sach.
+    out["steps"] = sum(1 for step in out["steps_detail"] if step["kind"] == "tool")
+    out["answer"] = None
+    for step in out["steps_detail"]:
+        if step["kind"] == "answer":
+            payload = step.get("result_json")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except ValueError:
+                    payload = None
+            out["answer"] = (payload or {}).get("text") if isinstance(payload, dict) else None
+    return out
 
 
 def utc_ms_to_dt(ms: int) -> datetime:

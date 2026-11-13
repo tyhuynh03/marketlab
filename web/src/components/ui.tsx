@@ -46,6 +46,7 @@ const PATHS: Record<string, ReactNode> = {
   undo: <><path d="M3 7h7a3.5 3.5 0 010 7H6" /><path d="M5.5 4.5L3 7l2.5 2.5" /></>,
   star: <path d="M8 2.2l1.8 3.7 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4L2.2 6.5l4-.6z" />,
   bolt: <path d="M9 1.5L3.5 9H7l-.8 5.5L12.5 7H9z" />,
+  spark: <><path d="M7 1.8l1.3 3.9L12.2 7l-3.9 1.3L7 12.2 5.7 8.3 1.8 7l3.9-1.3z" /><path d="M12.2 10.6l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z" /></>,
   layers: <><path d="M8 2l6 3-6 3-6-3z" /><path d="M2 8l6 3 6-3M2 11l6 3 6-3" /></>,
   keyboard: <><rect x="1.5" y="4" width="13" height="8" rx="1" /><path d="M4 6.5h.5M6.5 6.5h.5M9 6.5h.5M11.5 6.5h.5M4.5 9.5h7" /></>,
   drag: <path d="M2 6h12M2 10h12" />,

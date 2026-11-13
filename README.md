@@ -66,8 +66,28 @@ trong `.env` để không đụng nhau.
 | `GET /api/summary?symbol=&timeframe=&limit=` | total return, annualised, max drawdown, volatility, Sharpe, Sortino, Calmar |
 | `POST /api/ingest?symbol=&days=`             | kéo ccxt về `days` ngày, UPSERT, rồi refresh CAgg                     |
 | `GET /api/live`                              | SSE: state + snapshot nến đang chạy + `bar`/`closed` + heartbeat 15s   |
+| `POST /api/agent/analyze`                    | một phát phân tích, không tool (qwen, ngân sách token theo model)      |
+| `POST /api/agent/runs`                       | tạo run agent tool-calling, trả `202 {run_id}`; 422/503/404          |
+| `GET /api/agent/runs/{id}`                   | trạng thái + câu trả lời cuối cho client reconnect                    |
+| `GET /api/agent/runs/{id}/stream`            | SSE: `step`, `tool_result`, `answer`, `done`, `error` + heartbeat 15s |
+| `POST /api/agent/runs/{id}/cancel`           | hủy run đang chạy; run đã xong trả `cancelled: false`                 |
 
 `symbol` dùng dạng ccxt (`BTC/USDT`), không phải dạng Binance (`BTCUSDT`).
+
+## Agent đọc-only (LLM)
+
+Agent chỉ đọc dữ liệu đã có trong kho: 4 tool `get_watchlist`, `get_summary`,
+`get_candles` (≤120 nến), `get_indicator_series` (sma/ema/volatility/drawdown).
+Model tool `LLM_MODEL_TOOL` (gpt-oss) chạy tối đa 6 bước; sau đó **một** call trả
+lời cuối bằng `LLM_MODEL` (qwen) trên bằng chứng đã nén, không đổ raw tool output
+vào prompt. qwen lỗi 2 lần thì trả lời bằng model tool và ghi rõ `model_used`.
+
+Ngân sách một lượt dưới 8.000 TPM: profile theo model đo từ benchmark — qwen
+1,30 ký tự/token, trần prompt 4.300 ký tự; gpt-oss 1,80 ký tự/token, trần 6.000
+ký tự. `reasoning_effort` chỉ gửi cho gpt-oss; qwen trả 400 nếu nhận tham số này.
+Khóa LLM chỉ nằm trong process api, không xuống worker và không vào prompt/log.
+
+Run và từng bước được lưu vào `agent_run` / `agent_step` (xem migration dưới).
 
 ## Quy ước chỉ số
 
@@ -139,7 +159,7 @@ Binance kline WS ──► LiveHub (bộ nhớ) ──► SSE /api/live ──�
 Trước khi tin một con số trên trang:
 
 ```bash
-cd backend && .venv/Scripts/python -m pytest -q      # 51 passed (0 skipped)
+cd backend && .venv/Scripts/python -m pytest -q      # 115 passed (0 skipped)
 ```
 
 Và tái kiểm trên hàng thật bằng SQL độc lập (`psql` → `statistics` thuần):
@@ -166,6 +186,19 @@ docker compose exec -T db psql -U marketlab -d marketlab -Atc "$Q"   # phai gion
 Lần chạy 2026-11-11 06:32 UTC: hash trước/sau `POST /api/ingest` giống hệt nhau
 (2881 nến/symbol, 0 gap, nến cuối 05:00 trong khi 06:00 đang mở); 24 nến đã đóng
 của mỗi symbol khớp `klines` Binance tới 8 chữ số thập phân.
+
+## Migration database
+
+`db/init/*.sql` chỉ chạy khi volume được tạo lần đầu. Bảng của agent (bước 2) nằm
+trong `db/migrations/002_agent.sql`, phải áp thủ công một lần cho volume đang chạy:
+
+```bash
+docker compose exec -T db psql -U marketlab -d marketlab < db/migrations/002_agent.sql
+```
+
+Toàn bộ lệnh là `CREATE TABLE/INDEX IF NOT EXISTS` nên chạy lại không mất dữ liệu
+run cũ. Kiểm tra: `docker compose exec -T db psql -U marketlab -d marketlab -c '\d agent_run'`.
+Volume mới tạo thì vẫn cần chạy migration này sau `docker compose up -d` lần đầu.
 
 ## Ghi chú
 

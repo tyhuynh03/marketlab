@@ -13,6 +13,7 @@ import {
   type Candle,
   type Timeframe,
 } from "./api";
+import { useAgentRun } from "./agentRun";
 import BottomPanel, { type LogEntry } from "./components/BottomPanel";
 import ChartPane, { type ChartHandle } from "./components/ChartPane";
 import { IndicatorsDialog, SettingsDialog, ShortcutsDialog } from "./components/Dialogs";
@@ -226,6 +227,24 @@ export default function App() {
     pushLog("Bắt đầu nạp lại toàn bộ watchlist từ Binance");
     ingest.mutate();
   }, [ingest, pushLog]);
+
+  /* ---------- agent: run nền + SSE (buoc 2) ---------- */
+  const { state: agentState, start: startAgent, cancel: cancelAgent, reset: resetAgent } =
+    useAgentRun({ symbol, timeframe, onLog: pushLog });
+  const agentResetRef = useRef(resetAgent);
+  agentResetRef.current = resetAgent;
+  // Đổi cặp hoặc khung thì run cũ không còn đúng: đóng stream và xoá kết quả.
+  useEffect(() => {
+    agentResetRef.current();
+  }, [symbol, timeframe]);
+
+  const runAnalyze = useCallback(() => {
+    void startAgent();
+  }, [startAgent]);
+
+  const cancelAnalyze = useCallback(() => {
+    void cancelAgent();
+  }, [cancelAgent]);
 
   const add = useMutation({
     mutationFn: ({ symbol: next, label }: { symbol: string; label: string }) => addSymbol(next, label),
@@ -490,16 +509,22 @@ export default function App() {
               candles={rows}
               summary={summary.data}
               log={log}
+              entries={entries}
               symbol={symbol}
               timeframe={timeframe}
               venue={venue}
               loading={candles.isPending}
               ingesting={ingest.isPending}
               lastIngest={lastIngest}
+              agent={agentState}
               onTab={(tab) => update("bottomTab", tab)}
               onHeight={(h) => update("bottomHeight", h)}
               onCollapse={() => update("bottomPanel", false)}
               onIngest={runIngest}
+              onSelectSymbol={onSelectSymbol}
+              onTimeframe={onTimeframe}
+              onAnalyze={runAnalyze}
+              onCancelAnalysis={cancelAnalyze}
             />
           )}
         </main>

@@ -1,16 +1,20 @@
 # Chay sau khi tao venv: pip install -r requirements.txt
-# Ban dau de mo, slice 1 xong thi dong bang pip freeze (xem ghi chu README).
-ccxt
-asyncpg
-fastapi
-uvicorn[standard]
-websockets
-pandas
-numpy
-pydantic-settings
-APScheduler
+# Pin theo ban da chay that trong backend/.venv (truoc day de mo, rebuild keo ban moi).
+ccxt==4.5.92
+asyncpg==0.32.0
+fastapi==0.162.4
+uvicorn[standard]==0.54.0
+websockets==17.4
+pandas==3.1.1
+numpy==2.4.6
+pydantic-settings==2.16.2
+APScheduler==3.11.3
+# agent.py goi anyio.to_thread de day pandas ra khoi event loop.
+anyio==4.16.0
+# Agent buoc 1: goi Groq qua giao dien OpenAI-compatible (chi can base_url).
+openai==3.50.0
 
 # test
-pytest
-pytest-asyncio
-httpx
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1
+httpx==0.28.1

@@ -30,6 +30,13 @@ def test_normalize_symbol_rejects_junk(raw):
         db.normalize_symbol(raw)
 
 
+def test_normalize_symbol_error_is_readable_vietnamese():
+    with pytest.raises(ValueError) as info:
+        db.normalize_symbol("BTC-USD")
+    message = str(info.value)
+    assert "không hợp lệ" in message and "ví dụ BTC/USDT" in message
+
+
 @pytest.fixture
 def settings_only(monkeypatch):
     """Route phai tu choi symbol rac truoc khi mo exchange hay cham pool."""
